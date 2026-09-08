@@ -1,0 +1,35 @@
+import type { EventBody, PermissionDecision } from '@agent-console/contracts';
+
+export type PermissionRequest = {
+  toolName: string;
+  input: unknown;
+  description?: string;
+};
+
+export type TurnCallbacks = {
+  /** Normalized events for the thread log. The caller stamps seq/threadId/ts. */
+  onEvent(body: EventBody): void;
+  requestPermission(request: PermissionRequest): Promise<PermissionDecision>;
+};
+
+export type StartTurnParams = {
+  threadId: string;
+  prompt: string;
+  cwd: string;
+  resumeSessionId?: string;
+};
+
+export type TurnResult = {
+  /** Cursor to pass back as `resumeSessionId` on the next turn. */
+  sessionId?: string;
+};
+
+/**
+ * A harness (Claude Code today, Codex later) normalized to our event stream.
+ * Implementations emit everything except `turn_started`, `permission_*` and
+ * `diff_ready`, which the turn runner owns.
+ */
+export interface AgentAdapter {
+  startTurn(params: StartTurnParams, callbacks: TurnCallbacks): Promise<TurnResult>;
+  stop(threadId: string): void;
+}
