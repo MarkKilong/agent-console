@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {
+      "@agent-console/contracts": ["../packages/contracts/src/index.ts"]
+    }
+  },
+  "include": ["**/*.ts", "../vitest.config.ts"]
+}
