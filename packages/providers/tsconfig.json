@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // Typecheck against workspace sources so no build step is needed. These cannot
+    // live in the build config: emitting a file from outside rootDir is an error.
+    "paths": {
+      "@agent-console/contracts": ["../contracts/src/index.ts"],
+      "@agent-console/runner": ["../runner/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}
