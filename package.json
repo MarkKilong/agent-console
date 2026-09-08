@@ -1,0 +1,26 @@
+{
+  "name": "agent-console",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@11.10.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck && tsc -p tests/tsconfig.json",
+    "clean": "node -e \"for (const d of ['packages/contracts/dist','packages/runner/dist','packages/providers/dist','apps/web/.next']) require('fs').rmSync(d, {recursive:true, force:true})\"",
+    "test": "vitest run",
+    "dev:runner": "pnpm --filter @agent-console/runner dev",
+    "dev:web": "pnpm --filter web dev"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.0",
+    "ws": "^8.21.3"
+  }
+}

@@ -1,0 +1,7 @@
+packages:
+  - 'packages/*'
+  - 'apps/*'
+
+# vitest pulls in esbuild, whose install script is trusted here.
+allowBuilds:
+  esbuild: true
