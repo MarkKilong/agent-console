@@ -1,0 +1,83 @@
+import { z } from 'zod';
+import { PermissionDecisionSchema } from './commands.js';
+
+export const DiffStatusSchema = z.enum(['added', 'modified', 'deleted', 'renamed']);
+export type DiffStatus = z.infer<typeof DiffStatusSchema>;
+
+export const DiffFileSchema = z.object({
+  path: z.string(),
+  status: DiffStatusSchema,
+  /** Empty for a binary file, which has a status but no reviewable patch. */
+  patch: z.string(),
+  /** The previous path, on a renamed file. */
+  oldPath: z.string().optional(),
+});
+export type DiffFile = z.infer<typeof DiffFileSchema>;
+
+export const UsageSchema = z.object({
+  inputTokens: z.number().int().nonnegative().optional(),
+  outputTokens: z.number().int().nonnegative().optional(),
+  costUsd: z.number().nonnegative().optional(),
+});
+export type Usage = z.infer<typeof UsageSchema>;
+
+/** Fields every event carries; `seq` is monotonic per thread starting at 1. */
+const envelope = {
+  seq: z.number().int().positive(),
+  threadId: z.string().min(1),
+  ts: z.number().int().nonnegative(),
+};
+
+export const EventSchema = z.discriminatedUnion('type', [
+  z.object({ ...envelope, type: z.literal('turn_started') }),
+  z.object({ ...envelope, type: z.literal('assistant_delta'), text: z.string() }),
+  z.object({ ...envelope, type: z.literal('assistant_message'), text: z.string() }),
+  z.object({
+    ...envelope,
+    type: z.literal('tool_call_started'),
+    toolCallId: z.string(),
+    name: z.string(),
+    input: z.unknown(),
+  }),
+  z.object({
+    ...envelope,
+    type: z.literal('tool_call_finished'),
+    toolCallId: z.string(),
+    output: z.string().optional(),
+    isError: z.boolean(),
+  }),
+  z.object({
+    ...envelope,
+    type: z.literal('permission_requested'),
+    requestId: z.string(),
+    toolName: z.string(),
+    input: z.unknown(),
+    description: z.string().optional(),
+  }),
+  z.object({
+    ...envelope,
+    type: z.literal('permission_resolved'),
+    requestId: z.string(),
+    decision: PermissionDecisionSchema,
+  }),
+  z.object({ ...envelope, type: z.literal('diff_ready'), files: z.array(DiffFileSchema) }),
+  z.object({
+    ...envelope,
+    type: z.literal('turn_finished'),
+    stopReason: z.string(),
+    usage: UsageSchema.optional(),
+  }),
+  z.object({
+    ...envelope,
+    type: z.literal('error'),
+    message: z.string(),
+    code: z.string().optional(),
+  }),
+]);
+export type Event = z.infer<typeof EventSchema>;
+export type EventType = Event['type'];
+
+/** An event before the thread log stamps it with seq/threadId/ts. */
+export type EventBody = {
+  [K in EventType]: Omit<Extract<Event, { type: K }>, 'seq' | 'threadId' | 'ts'>;
+}[EventType];
