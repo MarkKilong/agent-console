@@ -6,9 +6,7 @@ import {
   type ServerMessage,
 } from '@agent-console/contracts';
 
-export type DecodeResult =
-  | { ok: true; command: Command }
-  | { ok: false; error: string };
+export type DecodeResult = { ok: true; command: Command } | { ok: false; error: string };
 
 export function decodeCommand(raw: string): DecodeResult {
   let json: unknown;

@@ -72,9 +72,7 @@ export function parseUnifiedDiff(patch: string): ParsedDiff {
   return { hunks, added, removed };
 }
 
-export type DiffRow =
-  | { kind: 'line'; line: DiffLine }
-  | { kind: 'gap'; count: number };
+export type DiffRow = { kind: 'line'; line: DiffLine } | { kind: 'gap'; count: number };
 
 /**
  * Collapses runs of unchanged lines longer than `context * 2 + 1` into a gap

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { PermissionDecision } from '@agent-console/contracts';
-import type { AgentAdapter, PermissionRequest } from './agent/AgentAdapter.js';
+import type { AgentAdapter, PermissionRequest } from './agent/agent-adapter.js';
 import { diffTrees, snapshotTree } from './git/diff.js';
 import type { ActiveTurn, ThreadRegistry } from './threads.js';
 

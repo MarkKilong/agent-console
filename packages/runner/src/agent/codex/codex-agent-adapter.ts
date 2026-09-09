@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { Usage } from '@agent-console/contracts';
-import type { AgentAdapter, StartTurnParams, TurnCallbacks, TurnResult } from '../AgentAdapter.js';
-import { JsonRpcClient, RpcError } from './JsonRpcClient.js';
+import type { AgentAdapter, StartTurnParams, TurnCallbacks, TurnResult } from '../agent-adapter.js';
+import { JsonRpcClient, RpcError } from './json-rpc-client.js';
 
 export type CodexAgentAdapterOptions = {
   command: string;

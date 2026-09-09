@@ -1,9 +1,9 @@
 import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
 import type { Config } from '../config.js';
-import type { AgentAdapter } from './AgentAdapter.js';
-import { ClaudeAgentAdapter } from './ClaudeAgentAdapter.js';
-import { CodexAgentAdapter } from './codex/CodexAgentAdapter.js';
-import { FakeAgentAdapter } from './FakeAgentAdapter.js';
+import type { AgentAdapter } from './agent-adapter.js';
+import { ClaudeAgentAdapter } from './claude-agent-adapter.js';
+import { CodexAgentAdapter } from './codex/codex-agent-adapter.js';
+import { FakeAgentAdapter } from './fake-agent-adapter.js';
 
 export function createAdapter(config: Config): AgentAdapter {
   if (config.agent === 'fake') {

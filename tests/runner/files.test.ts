@@ -2,7 +2,11 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { listWorkspaceFiles, readWorkspaceFile, resolveInside } from '../../packages/runner/src/files.js';
+import {
+  listWorkspaceFiles,
+  readWorkspaceFile,
+  resolveInside,
+} from '../../packages/runner/src/files.js';
 
 let root: string;
 
@@ -22,12 +26,9 @@ describe('resolveInside', () => {
     expect(resolveInside(root, 'src/a.ts')).toBe(join(root, 'src', 'a.ts'));
   });
 
-  it.each(['../secret.txt', 'src/../../secret.txt', '/etc/passwd'])(
-    'rejects %s',
-    (path) => {
-      expect(() => resolveInside(root, path)).toThrow(/escapes the workspace/);
-    },
-  );
+  it.each(['../secret.txt', 'src/../../secret.txt', '/etc/passwd'])('rejects %s', (path) => {
+    expect(() => resolveInside(root, path)).toThrow(/escapes the workspace/);
+  });
 });
 
 describe('readWorkspaceFile', () => {

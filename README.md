@@ -1,7 +1,7 @@
 # agent-console
 
 A chat-plus-IDE web UI for driving agent harnesses (Claude Code first, Codex later) that run
-inside an *environment* — your local machine today, a remote sandbox or VPS later.
+inside an _environment_ — your local machine today, a remote sandbox or VPS later.
 
 Phase 1 is the backend under `packages/`; phase 2 is the Next.js control plane and UI under
 `apps/web`.
@@ -72,12 +72,12 @@ Ports and adapters, with three moving parts:
 
 ## Packages
 
-| Package | What it is |
-| --- | --- |
-| `packages/contracts` | zod schemas and inferred types for commands, events, responses and the environment spec. Exports `PROTOCOL_VERSION`. |
-| `packages/runner` | The Node service that runs inside an environment: WebSocket + `/healthz`, agent adapters, thread event log, file access, git diff. |
-| `packages/providers` | The `EnvironmentProvider` interface and the `local` adapter that spawns the runner as a child process. |
-| `apps/web` | Next.js control plane and UI: route handlers that create environments, plus a three-column threads / chat / diff view driven over the runner's WebSocket. |
+| Package              | What it is                                                                                                                                                |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/contracts` | zod schemas and inferred types for commands, events, responses and the environment spec. Exports `PROTOCOL_VERSION`.                                      |
+| `packages/runner`    | The Node service that runs inside an environment: WebSocket + `/healthz`, agent adapters, thread event log, file access, git diff.                        |
+| `packages/providers` | The `EnvironmentProvider` interface and the `local` adapter that spawns the runner as a child process.                                                    |
+| `apps/web`           | Next.js control plane and UI: route handlers that create environments, plus a three-column threads / chat / diff view driven over the runner's WebSocket. |
 
 ## Protocol
 
@@ -117,7 +117,7 @@ during an active turn produces an `error` event with code `turn_active`.
 Before a turn starts the runner hashes the whole working tree — untracked files included,
 `.gitignore` respected — into a git tree object, using a throwaway `GIT_INDEX_FILE` so the
 repository's own index and HEAD are never touched. It hashes it again when the turn ends and
-diffs the two trees, so `diff_ready` carries only what *that* turn changed: uncommitted work
+diffs the two trees, so `diff_ready` carries only what _that_ turn changed: uncommitted work
 from before the environment was opened, or from an earlier turn, never leaks into it. Renames
 are detected (`status: 'renamed'` plus `oldPath`), binary files get a status with an empty
 `patch`, and tree-to-tree diffs read blobs that git already normalized, so `core.autocrlf`
@@ -129,16 +129,16 @@ falls back to the whole workspace against HEAD.
 
 ## Runner configuration
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `RUNNER_TOKEN` | *(required)* | Shared secret. The runner refuses to start without it. |
-| `RUNNER_PORT` | `4310` | HTTP/WebSocket port. |
-| `RUNNER_CWD` | `process.cwd()` | Repository root. File reads and diffs are confined to it. |
-| `RUNNER_AGENT` | `claude` | `claude` for the real SDK, `codex` for `codex app-server`, `fake` for the scripted test adapter. |
-| `RUNNER_PERMISSION_MODE` | `default` | Passed through to the SDK's `permissionMode`. |
-| `CLAUDE_BINARY` | resolved from `PATH` | Path to the Claude Code executable. On Windows the runner looks for `claude.exe` only: the SDK spawns the binary without a shell, so a `.cmd` shim would fail. |
-| `CODEX_BINARY` | resolved from `PATH` | Path to the Codex executable. `codex.cmd`, `codex.exe` or `codex` on Windows; the adapter runs a shim through a shell. |
-| `CODEX_MODEL` | *(CLI default)* | Model passed to `thread/start`. |
+| Variable                 | Default              | Meaning                                                                                                                                                        |
+| ------------------------ | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RUNNER_TOKEN`           | _(required)_         | Shared secret. The runner refuses to start without it.                                                                                                         |
+| `RUNNER_PORT`            | `4310`               | HTTP/WebSocket port.                                                                                                                                           |
+| `RUNNER_CWD`             | `process.cwd()`      | Repository root. File reads and diffs are confined to it.                                                                                                      |
+| `RUNNER_AGENT`           | `claude`             | `claude` for the real SDK, `codex` for `codex app-server`, `fake` for the scripted test adapter.                                                               |
+| `RUNNER_PERMISSION_MODE` | `default`            | Passed through to the SDK's `permissionMode`.                                                                                                                  |
+| `CLAUDE_BINARY`          | resolved from `PATH` | Path to the Claude Code executable. On Windows the runner looks for `claude.exe` only: the SDK spawns the binary without a shell, so a `.cmd` shim would fail. |
+| `CODEX_BINARY`           | resolved from `PATH` | Path to the Codex executable. `codex.cmd`, `codex.exe` or `codex` on Windows; the adapter runs a shim through a shell.                                         |
+| `CODEX_MODEL`            | _(CLI default)_      | Model passed to `thread/start`.                                                                                                                                |
 
 Clients authenticate with `?token=…` on the WebSocket URL or an `Authorization: Bearer …`
 header. A bad token closes the socket with code `4401`. `GET /healthz` is unauthenticated and
@@ -156,6 +156,22 @@ pnpm build             # emits dist/ per package; needed for `node dist/main.js`
 Tests live in one root `tests/` folder that mirrors the packages (`tests/contracts`,
 `tests/runner`, `tests/providers`, `tests/web`) and are driven by the single root
 `vitest.config.ts`. Run one file with `pnpm vitest run tests/runner/diff.test.ts`.
+
+### Lint & format
+
+```sh
+pnpm lint              # eslint over the workspace
+pnpm lint:fix          # …and apply what it can fix
+pnpm format            # prettier --write .
+pnpm format:check      # prettier --check .
+```
+
+One root `eslint.config.js` and one root `.prettierrc` cover every package; ESLint owns
+correctness and naming, Prettier owns formatting (single quotes, semicolons, 100 columns).
+
+File names are kebab-case everywhere except the file names Next.js reserves (`page.tsx`,
+`layout.tsx`, `route.ts`); identifiers are PascalCase for types and components, camelCase
+otherwise, with snake_case and PascalCase allowed on properties that mirror wire fields.
 
 Run the runner in watch mode:
 
@@ -185,11 +201,11 @@ Paste a repository path into the sidebar and press **Open**. That posts to
 `POST /api/environments`, which returns `{id, url, token}`; the browser then opens a WebSocket to
 the runner and drives it directly — the Next.js server is not in the message path.
 
-| Route | Does |
-| --- | --- |
-| `POST /api/environments` | `{repoPath, agent?}` → creates an environment and returns `{id, url, token}`. `agent` is `claude` or `codex` and overrides `RUNNER_AGENT` for that environment. |
-| `GET /api/environments/:id` | Environment status. |
-| `DELETE /api/environments/:id` | Destroys the environment and kills its runner. |
+| Route                          | Does                                                                                                                                                            |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/environments`       | `{repoPath, agent?}` → creates an environment and returns `{id, url, token}`. `agent` is `claude` or `codex` and overrides `RUNNER_AGENT` for that environment. |
+| `GET /api/environments/:id`    | Environment status.                                                                                                                                             |
+| `DELETE /api/environments/:id` | Destroys the environment and kills its runner.                                                                                                                  |
 
 `RUNNER_AGENT`, `CLAUDE_BINARY`, `CODEX_BINARY` and `CODEX_MODEL` are optional overrides read
 from the Next.js process and forwarded into every runner it spawns. The defaults are the real
@@ -261,7 +277,15 @@ This exercises the real SDK end to end. Nothing in the automated test suite does
    `requestId`:
 
    ```json
-   {"kind":"command","command":{"type":"answer_permission","threadId":"t1","requestId":"<from the event>","decision":"allow"}}
+   {
+     "kind": "command",
+     "command": {
+       "type": "answer_permission",
+       "threadId": "t1",
+       "requestId": "<from the event>",
+       "decision": "allow"
+     }
+   }
    ```
 
 6. The turn ends with `turn_finished` followed by `diff_ready`, whose `files` should contain the

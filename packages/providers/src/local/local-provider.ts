@@ -12,7 +12,7 @@ import {
   type EnvSpec,
   type EnvStatus,
 } from '@agent-console/contracts';
-import type { EnvironmentProvider } from '../EnvironmentProvider.js';
+import type { EnvironmentProvider } from '../environment-provider.js';
 
 const READY_TIMEOUT_MS = 20_000;
 const STDERR_KEEP = 4_000;

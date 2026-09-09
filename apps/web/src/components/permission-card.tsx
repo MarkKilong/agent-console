@@ -2,7 +2,7 @@
 
 import type { PermissionDecision } from '@agent-console/contracts';
 import { Shield } from 'lucide-react';
-import type { PendingPermission } from '@/store/threadState';
+import type { PendingPermission } from '@/store/thread-state';
 import { Button } from './ui';
 
 export function PermissionCard({
@@ -24,9 +24,7 @@ export function PermissionCard({
         </span>
       </div>
 
-      <p className="mt-2 text-fg">
-        {permission.description ?? `Run ${permission.toolName}`}
-      </p>
+      <p className="mt-2 text-fg">{permission.description ?? `Run ${permission.toolName}`}</p>
 
       {preview ? (
         <div className="mt-2 rounded-md bg-black/30 px-2 py-1.5 font-mono text-[11px]">

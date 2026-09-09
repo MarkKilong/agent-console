@@ -1,4 +1,4 @@
-import type { AgentAdapter, StartTurnParams, TurnCallbacks, TurnResult } from './AgentAdapter.js';
+import type { AgentAdapter, StartTurnParams, TurnCallbacks, TurnResult } from './agent-adapter.js';
 
 /**
  * Deterministic stand-in for the real SDK: exercises every event shape so the

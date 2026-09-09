@@ -1,6 +1,11 @@
-import { query, type Options, type PermissionMode, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import {
+  query,
+  type Options,
+  type PermissionMode,
+  type SDKMessage,
+} from '@anthropic-ai/claude-agent-sdk';
 import type { Usage } from '@agent-console/contracts';
-import type { AgentAdapter, StartTurnParams, TurnCallbacks, TurnResult } from './AgentAdapter.js';
+import type { AgentAdapter, StartTurnParams, TurnCallbacks, TurnResult } from './agent-adapter.js';
 
 export type ClaudeAgentAdapterOptions = {
   pathToClaudeCodeExecutable: string;
@@ -110,7 +115,8 @@ function emit(message: SDKMessage, callbacks: TurnCallbacks): void {
     case 'result': {
       callbacks.onEvent({
         type: 'turn_finished',
-        stopReason: message.subtype === 'success' ? (message.stop_reason ?? 'end_turn') : message.subtype,
+        stopReason:
+          message.subtype === 'success' ? (message.stop_reason ?? 'end_turn') : message.subtype,
         usage: usageOf(message),
       });
       return;

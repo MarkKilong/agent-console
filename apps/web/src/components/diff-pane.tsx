@@ -2,8 +2,8 @@
 
 import { ChevronDown, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import { useState } from 'react';
-import { useThread } from '@/store/useConsoleStore';
-import { FileDiff } from './FileDiff';
+import { useThread } from '@/store/use-console-store';
+import { FileDiff } from './file-diff';
 import { DiffStat, EmptyState, IconButton, PaneHeader } from './ui';
 
 type Props = {

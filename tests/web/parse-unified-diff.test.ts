@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collapseContext, parseUnifiedDiff } from '../../apps/web/src/lib/parseUnifiedDiff.js';
+import { collapseContext, parseUnifiedDiff } from '../../apps/web/src/lib/parse-unified-diff.js';
 
 const PATCH = [
   'diff --git a/src/app.ts b/src/app.ts',
@@ -48,9 +48,11 @@ describe('parseUnifiedDiff', () => {
   });
 
   it('ignores the trailing newline instead of emitting a phantom line', () => {
-    const patch = ['@@ -0,0 +1,5 @@', ...Array.from({ length: 5 }, (_, i) => `+line ${i + 1}`), ''].join(
-      '\n',
-    );
+    const patch = [
+      '@@ -0,0 +1,5 @@',
+      ...Array.from({ length: 5 }, (_, i) => `+line ${i + 1}`),
+      '',
+    ].join('\n');
     const { hunks, added } = parseUnifiedDiff(patch);
 
     expect(added).toBe(5);

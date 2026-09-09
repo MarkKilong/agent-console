@@ -13,8 +13,8 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/cn';
-import { toolLabel } from '@/lib/toolLabel';
-import type { ChatItem } from '@/store/threadState';
+import { toolLabel } from '@/lib/tool-label';
+import type { ChatItem } from '@/store/thread-state';
 import { Spinner } from './ui';
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>;
@@ -51,7 +51,9 @@ export function ToolCallRow({ item }: { item: ToolItem }) {
             <Spinner className="text-muted" />
           )}
         </span>
-        <span className={cn('min-w-0 flex-1 truncate', item.isError ? 'text-danger' : 'text-muted')}>
+        <span
+          className={cn('min-w-0 flex-1 truncate', item.isError ? 'text-danger' : 'text-muted')}
+        >
           {toolLabel(item.name, item.input)}
         </span>
         {open ? (

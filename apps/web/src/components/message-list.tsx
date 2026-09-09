@@ -5,9 +5,9 @@ import { CircleAlert, FileDiff } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { ChatItem, PendingPermission } from '@/store/threadState';
-import { PermissionCard } from './PermissionCard';
-import { ToolCallRow } from './ToolCallRow';
+import type { ChatItem, PendingPermission } from '@/store/thread-state';
+import { PermissionCard } from './permission-card';
+import { ToolCallRow } from './tool-call-row';
 import { DiffStat, EmptyState } from './ui';
 
 type Props = {

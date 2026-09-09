@@ -57,15 +57,23 @@ export function PaneHeader({ children }: { children: ReactNode }) {
 }
 
 export function EmptyState({ children }: { children: ReactNode }) {
-  return (
-    <div className="px-5 py-6 text-center text-xs text-muted/70">{children}</div>
-  );
+  return <div className="px-5 py-6 text-center text-xs text-muted/70">{children}</div>;
 }
 
 /** `+A −D` in the diff green/red, as T3's DiffStatLabel renders it. */
-export function DiffStat({ added, removed, className }: { added: number; removed: number; className?: string }) {
+export function DiffStat({
+  added,
+  removed,
+  className,
+}: {
+  added: number;
+  removed: number;
+  className?: string;
+}) {
   return (
-    <span className={cn('inline-flex shrink-0 items-center gap-1.5 font-mono tabular-nums', className)}>
+    <span
+      className={cn('inline-flex shrink-0 items-center gap-1.5 font-mono tabular-nums', className)}
+    >
       <span className="text-success">+{added}</span>
       <span className="text-danger">−{removed}</span>
     </span>

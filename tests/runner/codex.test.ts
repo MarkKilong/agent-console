@@ -4,8 +4,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type {
   PermissionRequest,
   TurnCallbacks,
-} from '../../packages/runner/src/agent/AgentAdapter.js';
-import { CodexAgentAdapter } from '../../packages/runner/src/agent/codex/CodexAgentAdapter.js';
+} from '../../packages/runner/src/agent/agent-adapter.js';
+import { CodexAgentAdapter } from '../../packages/runner/src/agent/codex/codex-agent-adapter.js';
 
 const SERVER = fileURLToPath(new URL('./fixtures/fake-codex-app-server.mjs', import.meta.url));
 const CWD = process.cwd();

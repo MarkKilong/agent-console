@@ -1,5 +1,5 @@
 import type { DiffFile, Event } from '@agent-console/contracts';
-import { parseUnifiedDiff } from '@/lib/parseUnifiedDiff';
+import { parseUnifiedDiff } from '@/lib/parse-unified-diff';
 
 export type ChatItem =
   | { kind: 'user'; id: string; text: string }
@@ -13,7 +13,14 @@ export type ChatItem =
       isError: boolean;
       done: boolean;
     }
-  | { kind: 'summary'; id: string; turnIndex: number; files: number; added: number; removed: number }
+  | {
+      kind: 'summary';
+      id: string;
+      turnIndex: number;
+      files: number;
+      added: number;
+      removed: number;
+    }
   | { kind: 'error'; id: string; message: string; code: string | undefined };
 
 export type PendingPermission = {

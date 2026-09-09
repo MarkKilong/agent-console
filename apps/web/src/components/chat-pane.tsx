@@ -2,10 +2,10 @@
 
 import type { PermissionDecision } from '@agent-console/contracts';
 import { useState } from 'react';
-import type { RunnerClient } from '@/lib/runnerClient';
-import { useConsoleStore, useThread } from '@/store/useConsoleStore';
-import { Composer } from './Composer';
-import { MessageList } from './MessageList';
+import type { RunnerClient } from '@/lib/runner-client';
+import { useConsoleStore, useThread } from '@/store/use-console-store';
+import { Composer } from './composer';
+import { MessageList } from './message-list';
 import { EmptyState, PaneHeader } from './ui';
 
 type Props = {

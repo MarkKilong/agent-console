@@ -5,13 +5,13 @@ import { Check, ChevronDown, ChevronRight, Copy, FileText } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { highlightLines, languageForPath, type Token } from '@/lib/highlight';
-import { collapseContext, parseUnifiedDiff, type DiffLine } from '@/lib/parseUnifiedDiff';
+import { collapseContext, parseUnifiedDiff, type DiffLine } from '@/lib/parse-unified-diff';
 import { DiffStat } from './ui';
 
 type Row =
   | { kind: 'hunk'; key: string; header: string }
   | { kind: 'gap'; key: string; count: number }
-  | { kind: 'line'; key: string; line: DiffLine };
+  | { kind: 'line'; key: string; line: DiffLine; index: number };
 
 const STATUS_COLORS: Record<DiffStatus, string> = {
   added: 'text-success',
@@ -41,7 +41,6 @@ export function FileDiff({
   const tokens = useHighlight(code, languageForPath(file.path), open);
 
   const slash = file.path.lastIndexOf('/');
-  let lineIndex = -1;
 
   return (
     <div className="border-b border-line">
@@ -80,8 +79,7 @@ export function FileDiff({
                 </Separator>
               );
             }
-            lineIndex += 1;
-            return <LineRow key={row.key} line={row.line} tokens={tokens?.[lineIndex]} />;
+            return <LineRow key={row.key} line={row.line} tokens={tokens?.[row.index]} />;
           })}
         </div>
       ) : null}
@@ -179,13 +177,14 @@ function CopyPathButton({ path }: { path: string }) {
 function toRows(patch: string): { rows: Row[]; added: number; removed: number } {
   const { hunks, added, removed } = parseUnifiedDiff(patch);
   const rows: Row[] = [];
+  let index = -1;
 
   hunks.forEach((hunk, hunkIndex) => {
     rows.push({ kind: 'hunk', key: `h${hunkIndex}`, header: hunk.header });
     collapseContext(hunk.lines).forEach((row, rowIndex) => {
       const key = `h${hunkIndex}-${rowIndex}`;
       if (row.kind === 'gap') rows.push({ kind: 'gap', key, count: row.count });
-      else rows.push({ kind: 'line', key, line: row.line });
+      else rows.push({ kind: 'line', key, line: row.line, index: ++index });
     });
   });
 
@@ -194,12 +193,10 @@ function toRows(patch: string): { rows: Row[]; added: number; removed: number } 
 
 function useHighlight(code: string, language: string, enabled: boolean): Token[][] | null {
   const [tokens, setTokens] = useState<Token[][] | null>(null);
+  const active = enabled && language !== 'text';
 
   useEffect(() => {
-    if (!enabled || language === 'text') {
-      setTokens(null);
-      return;
-    }
+    if (!active) return;
     let cancelled = false;
     void highlightLines(code, language).then((result) => {
       if (!cancelled) setTokens(result);
@@ -207,7 +204,7 @@ function useHighlight(code: string, language: string, enabled: boolean): Token[]
     return () => {
       cancelled = true;
     };
-  }, [code, language, enabled]);
+  }, [code, language, active]);
 
-  return tokens;
+  return active ? tokens : null;
 }

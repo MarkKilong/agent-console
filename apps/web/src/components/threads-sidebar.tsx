@@ -4,9 +4,9 @@ import { Folder, Search, SquarePen, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Preflight } from '@/server/preflight';
 import { cn } from '@/lib/cn';
-import { relativeTime } from '@/lib/relativeTime';
-import { threadStatus, type ThreadStatus } from '@/store/threadState';
-import { useConsoleStore } from '@/store/useConsoleStore';
+import { relativeTime } from '@/lib/relative-time';
+import { threadStatus, type ThreadStatus } from '@/store/thread-state';
+import { useConsoleStore } from '@/store/use-console-store';
 import { Button, Dot, IconButton, Spinner } from './ui';
 
 export function ThreadsSidebar() {
@@ -172,8 +172,7 @@ function ProjectHeader() {
         body: JSON.stringify({ repoPath, ...(choosable ? { agent } : {}) }),
       });
       const body = (await response.json()) as
-        | { id: string; url: string; token: string }
-        | { error: string };
+        { id: string; url: string; token: string } | { error: string };
       if (!response.ok || !('id' in body)) {
         throw new Error('error' in body ? body.error : 'Could not open the environment');
       }
@@ -334,7 +333,9 @@ function PreflightNotice({ state, agent }: { state: Preflight | null; agent: Age
         <>
           <p className="text-danger">Claude Code is not installed.</p>
           <p className="text-muted">Windows:</p>
-          <code className="block break-all text-fg/80">irm https://claude.ai/install.ps1 | iex</code>
+          <code className="block break-all text-fg/80">
+            irm https://claude.ai/install.ps1 | iex
+          </code>
           <p className="text-muted">macOS/Linux:</p>
           <code className="block break-all text-fg/80">
             curl -fsSL https://claude.ai/install.sh | bash

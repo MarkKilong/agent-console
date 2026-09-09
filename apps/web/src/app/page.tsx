@@ -1,4 +1,4 @@
-import { Console } from '@/components/Console';
+import { Console } from '@/components/console';
 
 export default function Page() {
   return <Console />;

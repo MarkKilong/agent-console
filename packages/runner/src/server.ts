@@ -1,7 +1,12 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
-import { PROTOCOL_VERSION, type Command, type DiffFile, type Response } from '@agent-console/contracts';
+import {
+  PROTOCOL_VERSION,
+  type Command,
+  type DiffFile,
+  type Response,
+} from '@agent-console/contracts';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { createAdapter } from './agent/createAdapter.js';
+import { createAdapter } from './agent/create-adapter.js';
 import type { Config } from './config.js';
 import { listWorkspaceFiles, readWorkspaceFile } from './files.js';
 import { collectDiff, diffTrees, snapshotTree } from './git/diff.js';
@@ -60,7 +65,9 @@ export async function startServer(config: Config): Promise<RunnerServer> {
 function handleConnection(socket: WebSocket, deps: TurnDeps): void {
   const subscriptions = new Map<string, () => void>();
 
-  socket.send(encode({ kind: 'hello', protocolVersion: PROTOCOL_VERSION, runnerVersion: RUNNER_VERSION }));
+  socket.send(
+    encode({ kind: 'hello', protocolVersion: PROTOCOL_VERSION, runnerVersion: RUNNER_VERSION }),
+  );
 
   socket.on('message', (data) => {
     const decoded = decodeCommand(data.toString());
@@ -164,7 +171,11 @@ async function reply(
   try {
     response = { requestId, ok: true, data: await produce() };
   } catch (error) {
-    response = { requestId, ok: false, error: error instanceof Error ? error.message : String(error) };
+    response = {
+      requestId,
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
   if (socket.readyState === socket.OPEN) socket.send(encodeResponse(response));
 }

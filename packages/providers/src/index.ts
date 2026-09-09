@@ -1,8 +1,8 @@
-import type { EnvironmentProvider } from './EnvironmentProvider.js';
-import { LocalProvider } from './local/LocalProvider.js';
+import type { EnvironmentProvider } from './environment-provider.js';
+import { LocalProvider } from './local/local-provider.js';
 
-export type { EnvironmentProvider } from './EnvironmentProvider.js';
-export { LocalProvider } from './local/LocalProvider.js';
+export type { EnvironmentProvider } from './environment-provider.js';
+export { LocalProvider } from './local/local-provider.js';
 
 export type ProviderKind = 'local';
 

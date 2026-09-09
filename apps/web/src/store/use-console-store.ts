@@ -1,7 +1,7 @@
 import type { Event } from '@agent-console/contracts';
 import { create } from 'zustand';
-import type { ConnectionStatus } from '@/lib/runnerClient';
-import { emptyThread, foldEvent, withUserMessage, type ThreadState } from './threadState';
+import type { ConnectionStatus } from '@/lib/runner-client';
+import { emptyThread, foldEvent, withUserMessage, type ThreadState } from './thread-state';
 
 export type EnvironmentInfo = {
   id: string;

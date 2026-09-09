@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
-import { RunnerClient } from '@/lib/runnerClient';
-import { useConsoleStore } from '@/store/useConsoleStore';
-import { ChatPane } from './ChatPane';
-import { DiffPane } from './DiffPane';
-import { ThreadsSidebar } from './ThreadsSidebar';
+import { RunnerClient } from '@/lib/runner-client';
+import { useConsoleStore } from '@/store/use-console-store';
+import { ChatPane } from './chat-pane';
+import { DiffPane } from './diff-pane';
+import { ThreadsSidebar } from './threads-sidebar';
 
 export function Console() {
   const id = useConsoleStore((state) => state.environment?.id);
@@ -14,30 +14,31 @@ export function Console() {
   const token = useConsoleStore((state) => state.environment?.token);
   const activeThreadId = useConsoleStore((state) => state.activeThreadId);
 
-  const [client, setClient] = useState<RunnerClient | null>(null);
-  const [selectedTurn, setSelectedTurn] = useState<number | null>(null);
+  // Tagged with its thread so switching threads drops the selection by derivation.
+  const [selection, setSelection] = useState<{ threadId: string | null; turn: number } | null>(
+    null,
+  );
+  const selectedTurn = selection && selection.threadId === activeThreadId ? selection.turn : null;
+
+  // Derived from the environment so no render is spent adopting it; the effect
+  // below owns only the socket's lifetime.
+  const client = useMemo(() => {
+    if (!id || !url || !token) return null;
+    const { applyEvent, setStatus } = useConsoleStore.getState();
+    return new RunnerClient({ url, token, onEvent: applyEvent, onStatus: setStatus });
+  }, [id, url, token]);
 
   useEffect(() => {
-    if (!url || !token) {
-      setClient(null);
-      return;
-    }
-    const { applyEvent, setStatus } = useConsoleStore.getState();
-    const runner = new RunnerClient({ url, token, onEvent: applyEvent, onStatus: setStatus });
-    runner.connect();
-    setClient(runner);
-
-    return () => {
-      runner.dispose();
-      setClient(null);
-    };
-  }, [id, url, token]);
+    client?.connect();
+    return () => client?.dispose();
+  }, [client]);
 
   // Every thread the user visits gets its own subscription, replayed from its cursor.
   useEffect(() => {
     if (client && activeThreadId) client.subscribe(activeThreadId);
-    setSelectedTurn(null);
   }, [client, activeThreadId]);
+
+  const selectTurn = (turn: number) => setSelection({ threadId: activeThreadId, turn });
 
   return (
     <Group orientation="horizontal" className="h-screen bg-bg">
@@ -49,15 +50,11 @@ export function Console() {
       </Panel>
       <Separator className="w-px" />
       <Panel defaultSize="50" minSize="30" className="min-w-0">
-        <ChatPane client={client} threadId={activeThreadId} onShowFiles={setSelectedTurn} />
+        <ChatPane client={client} threadId={activeThreadId} onShowFiles={selectTurn} />
       </Panel>
       <Separator className="w-px" />
       <Panel defaultSize="32" minSize="20" className="min-w-0 border-l border-line">
-        <DiffPane
-          threadId={activeThreadId}
-          selectedTurn={selectedTurn}
-          onSelectTurn={setSelectedTurn}
-        />
+        <DiffPane threadId={activeThreadId} selectedTurn={selectedTurn} onSelectTurn={selectTurn} />
       </Panel>
     </Group>
   );

@@ -1,6 +1,11 @@
 import { PROTOCOL_VERSION } from '@agent-console/contracts';
 import { describe, expect, it } from 'vitest';
-import { decodeCommand, encode, encodeEvent, encodeResponse } from '../../packages/runner/src/protocol.js';
+import {
+  decodeCommand,
+  encode,
+  encodeEvent,
+  encodeResponse,
+} from '../../packages/runner/src/protocol.js';
 
 describe('decodeCommand', () => {
   it('decodes a wrapped command', () => {
@@ -9,7 +14,10 @@ describe('decodeCommand', () => {
       command: { type: 'send_prompt', threadId: 't1', text: 'hi' },
     });
     const result = decodeCommand(raw);
-    expect(result).toEqual({ ok: true, command: { type: 'send_prompt', threadId: 't1', text: 'hi' } });
+    expect(result).toEqual({
+      ok: true,
+      command: { type: 'send_prompt', threadId: 't1', text: 'hi' },
+    });
   });
 
   it('rejects malformed JSON', () => {
@@ -17,7 +25,10 @@ describe('decodeCommand', () => {
   });
 
   it('rejects a command with a bad payload', () => {
-    const raw = JSON.stringify({ kind: 'command', command: { type: 'read_file', requestId: 'r1' } });
+    const raw = JSON.stringify({
+      kind: 'command',
+      command: { type: 'read_file', requestId: 'r1' },
+    });
     const result = decodeCommand(raw);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain('path');
@@ -36,7 +47,11 @@ describe('encode', () => {
     const response = { requestId: 'r1', ok: false, error: 'nope' } as const;
     expect(JSON.parse(encodeResponse(response))).toEqual({ kind: 'response', response });
 
-    const hello = { kind: 'hello', protocolVersion: PROTOCOL_VERSION, runnerVersion: '0.1.0' } as const;
+    const hello = {
+      kind: 'hello',
+      protocolVersion: PROTOCOL_VERSION,
+      runnerVersion: '0.1.0',
+    } as const;
     expect(JSON.parse(encode(hello))).toEqual(hello);
   });
 });

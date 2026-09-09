@@ -23,7 +23,10 @@ export async function readWorkspaceFile(root: string, path: string): Promise<Rea
   if (info.size > MAX_READ_BYTES) {
     throw new Error(`File is larger than ${MAX_READ_BYTES} bytes: ${path}`);
   }
-  return { path: toPosix(relative(root, absolute)) || path, content: await readFile(absolute, 'utf8') };
+  return {
+    path: toPosix(relative(root, absolute)) || path,
+    content: await readFile(absolute, 'utf8'),
+  };
 }
 
 export async function listWorkspaceFiles(root: string, path = '.'): Promise<ListFilesData> {
@@ -49,7 +52,10 @@ async function listTrackedAndUntracked(root: string, absolute: string): Promise<
   if (result.code !== 0) {
     throw new Error(result.stderr.trim() || 'git ls-files failed');
   }
-  return result.stdout.split('\n').map((line) => line.trim()).filter(Boolean);
+  return result.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 const SKIP = new Set(['.git', 'node_modules']);
