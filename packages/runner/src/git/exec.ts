@@ -22,6 +22,13 @@ export function git(cwd: string, args: string[], env?: Record<string, string>): 
   });
 }
 
+/** The checked-out branch; undefined outside a repo, on a detached HEAD, or before the first commit. */
+export async function currentBranch(cwd: string): Promise<string | undefined> {
+  const result = await git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  const branch = result.stdout.trim();
+  return result.code === 0 && branch && branch !== 'HEAD' ? branch : undefined;
+}
+
 export async function isGitRepo(cwd: string): Promise<boolean> {
   const result = await git(cwd, ['rev-parse', '--is-inside-work-tree']);
   return result.code === 0 && result.stdout.trim() === 'true';

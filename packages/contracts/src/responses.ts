@@ -23,6 +23,8 @@ export const ThreadSummarySchema = z.object({
   id: z.string(),
   title: z.string(),
   agent: z.string(),
+  /** The workspace branch when the thread last started a turn. */
+  branch: z.string().optional(),
   updatedAt: z.number().int().nonnegative(),
 });
 export type ThreadSummary = z.infer<typeof ThreadSummarySchema>;

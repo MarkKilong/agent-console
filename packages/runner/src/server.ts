@@ -126,7 +126,11 @@ async function dispatch(
 
     case 'send_prompt':
       registry.notePrompt(command.threadId, command.text);
-      startTurn(deps, command.threadId, command.text);
+      startTurn(deps, command.threadId, command.text, {
+        model: command.model,
+        effort: command.effort,
+        permissionMode: command.permissionMode,
+      });
       return;
 
     case 'answer_permission': {

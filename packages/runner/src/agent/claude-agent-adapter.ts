@@ -51,6 +51,19 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     if (params.resumeSessionId) {
       options.resume = params.resumeSessionId;
     }
+    if (params.model) {
+      options.model = params.model;
+    }
+    if (params.effort) {
+      options.effort = params.effort;
+    }
+    if (params.permissionMode) {
+      options.permissionMode = params.permissionMode;
+      // The SDK refuses bypassPermissions without this opt-in.
+      if (params.permissionMode === 'bypassPermissions') {
+        options.allowDangerouslySkipPermissions = true;
+      }
+    }
 
     let sessionId: string | undefined;
     const state: EmitState = { thinkingOpen: false, thinkingStreamed: false };

@@ -131,6 +131,25 @@ describe('ThreadRegistry persistence', () => {
     expect(reloaded.list()[0]?.title).toHaveLength(60);
   });
 
+  it('keeps the branch on the meta line, so a reloaded thread still lists it', async () => {
+    const dir = await tempDir();
+    const registry = new ThreadRegistry(new FileThreadStore(dir), 'fake');
+    registry.notePrompt('t1', 'ship it');
+    registry.setBranch('t1', 'feat/app-shell');
+    registry.append('t1', { type: 'turn_started', branch: 'feat/app-shell' });
+
+    const reloaded = new ThreadRegistry(new FileThreadStore(dir), 'fake');
+    expect(reloaded.list()).toEqual([
+      {
+        id: 't1',
+        title: 'ship it',
+        agent: 'fake',
+        branch: 'feat/app-shell',
+        updatedAt: expect.any(Number),
+      },
+    ]);
+  });
+
   it('keeps going when the log cannot be written', async () => {
     const dir = await tempDir();
     await writeFile(join(dir, 'blocker'), '');

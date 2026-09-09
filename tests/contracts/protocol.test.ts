@@ -15,6 +15,24 @@ describe('commands', () => {
     expect(CommandSchema.parse(command)).toEqual(command);
   });
 
+  it('round-trips send_prompt with the composer settings', () => {
+    const command = {
+      type: 'send_prompt',
+      threadId: 't1',
+      text: 'hello',
+      model: 'claude-sonnet-5',
+      effort: 'low',
+      permissionMode: 'bypassPermissions',
+    };
+    expect(CommandSchema.parse(command)).toEqual(command);
+  });
+
+  it('rejects send_prompt with an unknown effort or permission mode', () => {
+    const base = { type: 'send_prompt', threadId: 't1', text: 'hello' };
+    expect(CommandSchema.safeParse({ ...base, effort: 'turbo' }).success).toBe(false);
+    expect(CommandSchema.safeParse({ ...base, permissionMode: 'plan' }).success).toBe(false);
+  });
+
   it('round-trips list_threads', () => {
     const command = { type: 'list_threads', requestId: 'r1' };
     expect(CommandSchema.parse(command)).toEqual(command);
@@ -119,6 +137,14 @@ describe('events', () => {
     expect(EventSchema.parse(event)).toEqual(event);
   });
 
+  it('round-trips turn_started with and without a branch', () => {
+    const started = { type: 'turn_started', seq: 1, threadId: 't1', ts: 1700000000000 };
+    expect(EventSchema.parse(started)).toEqual(started);
+
+    const onBranch = { ...started, branch: 'feat/app-shell' };
+    expect(EventSchema.parse(onBranch)).toEqual(onBranch);
+  });
+
   it('rejects an event without seq', () => {
     const result = EventSchema.safeParse({ type: 'turn_started', threadId: 't1', ts: 0 });
     expect(result.success).toBe(false);
@@ -140,7 +166,16 @@ describe('responses', () => {
       requestId: 'r1',
       ok: true,
       data: {
-        threads: [{ id: 't1', title: 'ship it', agent: 'claude', updatedAt: 1700000000000 }],
+        threads: [
+          { id: 't1', title: 'ship it', agent: 'claude', updatedAt: 1700000000000 },
+          {
+            id: 't2',
+            title: 'on a branch',
+            agent: 'claude',
+            branch: 'feat/app-shell',
+            updatedAt: 1700000000001,
+          },
+        ],
       },
     };
     expect(ResponseSchema.parse(response)).toEqual(response);

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { PermissionDecision } from '@agent-console/contracts';
-import type { AgentAdapter, PermissionRequest } from './agent/agent-adapter.js';
+import type { AgentAdapter, PermissionRequest, TurnOptions } from './agent/agent-adapter.js';
 import { diffTrees, snapshotTree } from './git/diff.js';
+import { currentBranch } from './git/exec.js';
 import type { ActiveTurn, ThreadRegistry } from './threads.js';
 
 export type TurnDeps = {
@@ -11,7 +12,12 @@ export type TurnDeps = {
 };
 
 /** Starts a turn, or logs an error event if one is already running on the thread. */
-export function startTurn(deps: TurnDeps, threadId: string, prompt: string): void {
+export function startTurn(
+  deps: TurnDeps,
+  threadId: string,
+  prompt: string,
+  options: TurnOptions = {},
+): void {
   if (deps.registry.activeTurn(threadId)) {
     deps.registry.append(threadId, {
       type: 'error',
@@ -23,7 +29,7 @@ export function startTurn(deps: TurnDeps, threadId: string, prompt: string): voi
 
   // Logged here rather than on the command so a refused prompt leaves no trace.
   deps.registry.append(threadId, { type: 'user_message', text: prompt });
-  const turn = new Turn(deps, threadId);
+  const turn = new Turn(deps, threadId, options);
   deps.registry.setActiveTurn(threadId, turn);
   void turn.run(prompt);
 }
@@ -40,11 +46,15 @@ class Turn implements ActiveTurn {
   constructor(
     private readonly deps: TurnDeps,
     private readonly threadId: string,
+    private readonly options: TurnOptions,
   ) {}
 
   async run(prompt: string): Promise<void> {
     const { registry, adapter, cwd } = this.deps;
-    registry.append(this.threadId, { type: 'turn_started' });
+    // One git call per turn: the card in the sidebar shows where the work happened.
+    const branch = await currentBranch(cwd);
+    if (branch) registry.setBranch(this.threadId, branch);
+    registry.append(this.threadId, { type: 'turn_started', ...(branch ? { branch } : {}) });
     this.baseTree = await this.snapshot();
     registry.setBaseTree(this.threadId, this.baseTree);
 
@@ -56,6 +66,7 @@ class Turn implements ActiveTurn {
       this.adapterStarted = true;
       const result = await adapter.startTurn(
         {
+          ...this.options,
           threadId: this.threadId,
           prompt,
           cwd,

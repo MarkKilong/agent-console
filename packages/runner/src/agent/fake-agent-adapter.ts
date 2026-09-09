@@ -1,5 +1,12 @@
 import type { AgentAdapter, StartTurnParams, TurnCallbacks, TurnResult } from './agent-adapter.js';
 
+let lastParams: StartTurnParams | undefined;
+
+/** What the last fake turn was handed, so tests can assert what the server threaded through. */
+export function lastFakeTurnParams(): StartTurnParams | undefined {
+  return lastParams;
+}
+
 /**
  * Deterministic stand-in for the real SDK: exercises every event shape so the
  * protocol can be tested without a model. Selected with RUNNER_AGENT=fake.
@@ -11,6 +18,7 @@ export class FakeAgentAdapter implements AgentAdapter {
 
   async startTurn(params: StartTurnParams, callbacks: TurnCallbacks): Promise<TurnResult> {
     const { threadId, prompt } = params;
+    lastParams = params;
     this.stopped.delete(threadId);
 
     // Keyword hook so tests can drive the failure path (an auth error, say).

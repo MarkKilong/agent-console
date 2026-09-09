@@ -1,8 +1,10 @@
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
+import { lastFakeTurnParams } from '../../packages/runner/src/agent/fake-agent-adapter.js';
 import type { Config } from '../../packages/runner/src/config.js';
 import { startServer, type RunnerServer } from '../../packages/runner/src/server.js';
 import { connect, fakeClaudeAuth, makeRepo, testConfig, type TestClient } from './helpers.js';
@@ -102,6 +104,60 @@ describe('a full turn', () => {
     const scoped = await client.waitForResponse('r-thread');
     expect(scoped.ok && 'files' in scoped.data && scoped.data.files).toEqual([
       expect.objectContaining({ path: 'during-turn.txt', status: 'added' }),
+    ]);
+
+    client.close();
+  }, 15000);
+
+  it('hands the composer settings to the adapter', async () => {
+    const client = await connect(server.port, 'test-token');
+    client.send({ type: 'subscribe', threadId: 't1' });
+    client.send({
+      type: 'send_prompt',
+      threadId: 't1',
+      text: 'fail-turn please',
+      model: 'claude-sonnet-5',
+      effort: 'low',
+      permissionMode: 'acceptEdits',
+    });
+
+    await client.waitForEvent((event) => event.type === 'turn_finished');
+    expect(lastFakeTurnParams()).toMatchObject({
+      model: 'claude-sonnet-5',
+      effort: 'low',
+      permissionMode: 'acceptEdits',
+    });
+
+    client.close();
+  }, 15000);
+
+  it('stamps the workspace branch on turn_started and on the thread summary', async () => {
+    // The fixture repo has no commit yet, so HEAD is unborn until one is made.
+    const run = (args: string[]) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
+    run([
+      '-c',
+      'user.email=test@example.com',
+      '-c',
+      'user.name=test',
+      'commit',
+      '-qm',
+      'init',
+      '--allow-empty',
+    ]);
+    run(['checkout', '-q', '-b', 'feat/cards']);
+
+    const client = await connect(server.port, 'test-token');
+    client.send({ type: 'subscribe', threadId: 't1' });
+    client.send({ type: 'send_prompt', threadId: 't1', text: 'fail-turn please' });
+
+    const started = await client.waitForEvent((event) => event.type === 'turn_started');
+    expect(started).toMatchObject({ branch: 'feat/cards' });
+
+    await client.waitForEvent((event) => event.type === 'diff_ready');
+    client.send({ type: 'list_threads', requestId: 'r-branch' });
+    const listed = await client.waitForResponse('r-branch');
+    expect(listed.ok && 'threads' in listed.data && listed.data.threads).toEqual([
+      expect.objectContaining({ id: 't1', branch: 'feat/cards' }),
     ]);
 
     client.close();

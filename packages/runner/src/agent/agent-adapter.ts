@@ -1,4 +1,9 @@
-import type { EventBody, PermissionDecision } from '@agent-console/contracts';
+import type {
+  Effort,
+  EventBody,
+  PermissionDecision,
+  PermissionMode,
+} from '@agent-console/contracts';
 
 export type PermissionRequest = {
   toolName: string;
@@ -12,7 +17,14 @@ export type TurnCallbacks = {
   requestPermission(request: PermissionRequest): Promise<PermissionDecision>;
 };
 
-export type StartTurnParams = {
+/** Per-turn overrides the client picks in the composer; absent means the runner's default. */
+export type TurnOptions = {
+  model?: string;
+  effort?: Effort;
+  permissionMode?: PermissionMode;
+};
+
+export type StartTurnParams = TurnOptions & {
   threadId: string;
   prompt: string;
   cwd: string;

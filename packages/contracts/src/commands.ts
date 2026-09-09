@@ -7,11 +7,25 @@ export type PermissionDecision = z.infer<typeof PermissionDecisionSchema>;
 export const AuthLoginModeSchema = z.enum(['claudeai', 'console']);
 export type AuthLoginMode = z.infer<typeof AuthLoginModeSchema>;
 
+/** Reasoning effort, as the Claude Agent SDK names its levels. */
+export const EffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
+export type Effort = z.infer<typeof EffortSchema>;
+
+export const PermissionModeSchema = z.enum(['default', 'acceptEdits', 'bypassPermissions']);
+export type PermissionMode = z.infer<typeof PermissionModeSchema>;
+
 const threadId = z.string().min(1);
 const requestId = z.string().min(1);
 
 export const CommandSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('send_prompt'), threadId, text: z.string().min(1) }),
+  z.object({
+    type: z.literal('send_prompt'),
+    threadId,
+    text: z.string().min(1),
+    model: z.string().optional(),
+    effort: EffortSchema.optional(),
+    permissionMode: PermissionModeSchema.optional(),
+  }),
   z.object({
     type: z.literal('answer_permission'),
     threadId,

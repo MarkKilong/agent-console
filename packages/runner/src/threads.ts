@@ -57,6 +57,7 @@ export class ThreadRegistry {
         id,
         title: thread.meta.title,
         agent: thread.meta.agent,
+        ...(thread.meta.branch ? { branch: thread.meta.branch } : {}),
         updatedAt: thread.meta.updatedAt,
       }))
       .sort((a, b) => b.updatedAt - a.updatedAt);
@@ -92,6 +93,14 @@ export class ThreadRegistry {
 
   setActiveTurn(threadId: string, turn: ActiveTurn | undefined): void {
     this.thread(threadId).turn = turn;
+  }
+
+  /** The workspace branch the thread's latest turn started on. */
+  setBranch(threadId: string, branch: string): void {
+    const thread = this.thread(threadId);
+    if (thread.meta.branch === branch) return;
+    thread.meta.branch = branch;
+    this.store.writeMeta(threadId, thread.meta);
   }
 
   sessionId(threadId: string): string | undefined {

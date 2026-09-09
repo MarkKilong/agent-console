@@ -30,7 +30,7 @@ const envelope = {
 
 export const EventSchema = z.discriminatedUnion('type', [
   z.object({ ...envelope, type: z.literal('user_message'), text: z.string() }),
-  z.object({ ...envelope, type: z.literal('turn_started') }),
+  z.object({ ...envelope, type: z.literal('turn_started'), branch: z.string().optional() }),
   z.object({ ...envelope, type: z.literal('thinking_delta'), text: z.string() }),
   z.object({ ...envelope, type: z.literal('thinking_finished') }),
   z.object({ ...envelope, type: z.literal('assistant_delta'), text: z.string() }),

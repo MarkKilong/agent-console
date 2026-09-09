@@ -6,6 +6,7 @@ import { z } from 'zod';
 const MetaSchema = z.object({
   title: z.string(),
   agent: z.string(),
+  branch: z.string().optional(),
   sessionId: z.string().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
