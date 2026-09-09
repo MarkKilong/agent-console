@@ -25,6 +25,8 @@ export function testConfig(cwd: string, token = 'test-token'): Config {
     cwd,
     agent: 'fake',
     claudeBinary: undefined,
+    codexBinary: undefined,
+    codexModel: undefined,
     permissionMode: 'default',
   };
 }

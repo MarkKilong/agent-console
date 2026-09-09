@@ -1,15 +1,17 @@
 import { accessSync, constants } from 'node:fs';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
 
-export type AgentKind = 'claude' | 'fake';
+export type AgentKind = 'claude' | 'codex' | 'fake';
 
 export type Config = {
   port: number;
   token: string;
   cwd: string;
   agent: AgentKind;
-  /** Undefined when the fake agent is used; the Claude adapter requires it. */
+  /** Set only for the agent in use; each adapter requires its own binary. */
   claudeBinary: string | undefined;
+  codexBinary: string | undefined;
+  codexModel: string | undefined;
   permissionMode: string;
 };
 
@@ -19,17 +21,28 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error('RUNNER_TOKEN is required');
   }
 
-  const agent = env.RUNNER_AGENT === 'fake' ? 'fake' : 'claude';
-  const override = env.CLAUDE_BINARY?.trim();
-  const claudeBinary = agent === 'fake' ? undefined : override || resolveClaudeBinary();
+  const agent = agentKind(env.RUNNER_AGENT);
+  const claudeOverride = env.CLAUDE_BINARY?.trim();
+  const claudeBinary = agent === 'claude' ? claudeOverride || resolveClaudeBinary() : undefined;
   if (agent === 'claude') {
     if (!claudeBinary) {
       throw new Error('Could not find the `claude` executable on PATH; set CLAUDE_BINARY');
     }
     // An override is never probed by resolveClaudeBinary, so check it here rather
     // than letting a bad path surface as a spawn failure on the first turn.
-    if (override && !isExecutable(override)) {
-      throw new Error(`CLAUDE_BINARY is not an executable file: ${override}`);
+    if (claudeOverride && !isExecutable(claudeOverride)) {
+      throw new Error(`CLAUDE_BINARY is not an executable file: ${claudeOverride}`);
+    }
+  }
+
+  const codexOverride = env.CODEX_BINARY?.trim();
+  const codexBinary = agent === 'codex' ? codexOverride || resolveCodexBinary() : undefined;
+  if (agent === 'codex') {
+    if (!codexBinary) {
+      throw new Error('Could not find the `codex` executable on PATH; set CODEX_BINARY');
+    }
+    if (codexOverride && !isExecutable(codexOverride)) {
+      throw new Error(`CODEX_BINARY is not an executable file: ${codexOverride}`);
     }
   }
 
@@ -39,8 +52,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     cwd: resolve(env.RUNNER_CWD?.trim() || process.cwd()),
     agent,
     claudeBinary,
+    codexBinary,
+    codexModel: env.CODEX_MODEL?.trim() || undefined,
     permissionMode: env.RUNNER_PERMISSION_MODE?.trim() || 'default',
   };
+}
+
+function agentKind(value: string | undefined): AgentKind {
+  const name = value?.trim();
+  return name === 'fake' || name === 'codex' ? name : 'claude';
 }
 
 /**
@@ -48,7 +68,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
  * Look for the real executable only.
  */
 function resolveClaudeBinary(): string | undefined {
-  const names = process.platform === 'win32' ? ['claude.exe'] : ['claude'];
+  return resolveOnPath(process.platform === 'win32' ? ['claude.exe'] : ['claude']);
+}
+
+/** The adapter runs a `.cmd` shim through a shell, so npm's global install works too. */
+function resolveCodexBinary(): string | undefined {
+  return resolveOnPath(
+    process.platform === 'win32' ? ['codex.cmd', 'codex.exe', 'codex'] : ['codex'],
+  );
+}
+
+function resolveOnPath(names: string[]): string | undefined {
   for (const dir of (process.env.PATH ?? '').split(delimiter).filter(Boolean)) {
     for (const name of names) {
       const candidate = isAbsolute(dir) ? join(dir, name) : resolve(dir, name);
