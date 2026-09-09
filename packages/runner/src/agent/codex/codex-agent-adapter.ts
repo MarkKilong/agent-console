@@ -196,6 +196,7 @@ export class CodexAgentAdapter implements AgentAdapter {
   private onNotification(method: string, params: unknown): void {
     const payload = (params ?? {}) as Record<string, unknown>;
     const turn = this.turns.get(String(payload.threadId));
+    // TODO(plan 06): sub-agent threads are dropped here; tag them with parentToolCallId instead.
     if (!turn) return;
 
     switch (method) {
@@ -261,6 +262,8 @@ export class CodexAgentAdapter implements AgentAdapter {
         return;
       }
 
+      // TODO(plan 06): map reasoning items to thinking_delta/thinking_finished once a real
+      // app-server has confirmed their field names.
       default:
         return;
     }

@@ -11,6 +11,11 @@ export class FakeAgentAdapter implements AgentAdapter {
     const { threadId, prompt } = params;
     this.stopped.delete(threadId);
 
+    // Keyword hook so tests can drive the failure path (an auth error, say).
+    if (prompt.includes('fail-turn')) throw new Error('fake adapter failure');
+
+    callbacks.onEvent({ type: 'thinking_delta', text: 'Deciding what to do. ' });
+    callbacks.onEvent({ type: 'thinking_finished' });
     callbacks.onEvent({ type: 'assistant_delta', text: 'Working on: ' });
     callbacks.onEvent({ type: 'assistant_delta', text: prompt });
 
@@ -39,6 +44,35 @@ export class FakeAgentAdapter implements AgentAdapter {
       callbacks.onEvent({ type: 'turn_finished', stopReason: 'stopped' });
       return {};
     }
+
+    // A sub-agent call, so the nesting tag has a fixture to be tested against.
+    const taskCallId = `fake-task-${threadId}`;
+    callbacks.onEvent({
+      type: 'tool_call_started',
+      toolCallId: taskCallId,
+      name: 'Task',
+      input: { prompt },
+    });
+    callbacks.onEvent({
+      type: 'tool_call_started',
+      toolCallId: `${taskCallId}-child`,
+      name: 'Read',
+      input: { file_path: 'fake.txt' },
+      parentToolCallId: taskCallId,
+    });
+    callbacks.onEvent({
+      type: 'tool_call_finished',
+      toolCallId: `${taskCallId}-child`,
+      output: prompt,
+      isError: false,
+      parentToolCallId: taskCallId,
+    });
+    callbacks.onEvent({
+      type: 'tool_call_finished',
+      toolCallId: taskCallId,
+      output: 'sub-agent finished',
+      isError: false,
+    });
 
     callbacks.onEvent({ type: 'assistant_message', text: `Done: ${prompt}` });
     callbacks.onEvent({

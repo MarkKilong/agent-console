@@ -44,10 +44,11 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     }
 
     let sessionId: string | undefined;
+    const state: EmitState = { thinkingOpen: false, thinkingStreamed: false };
     try {
       for await (const message of query({ prompt: params.prompt, options })) {
         sessionId = sessionIdOf(message) ?? sessionId;
-        emit(message, callbacks);
+        emit(message, callbacks, state);
       }
     } finally {
       this.aborts.delete(params.threadId);
@@ -65,31 +66,65 @@ function sessionIdOf(message: SDKMessage): string | undefined {
   return 'session_id' in message ? message.session_id : undefined;
 }
 
-function emit(message: SDKMessage, callbacks: TurnCallbacks): void {
+/** Per-turn scratch: `content_block_stop` does not say which block it closed. */
+type EmitState = { thinkingOpen: boolean; thinkingStreamed: boolean };
+
+function emit(message: SDKMessage, callbacks: TurnCallbacks, state: EmitState): void {
   switch (message.type) {
     case 'stream_event': {
+      // A sub-agent's prose is its own; folding it in would corrupt the parent's answer.
+      if (message.parent_tool_use_id) return;
       const event = message.event;
-      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-        callbacks.onEvent({ type: 'assistant_delta', text: event.delta.text });
+      if (event.type === 'content_block_delta') {
+        if (event.delta.type === 'text_delta') {
+          callbacks.onEvent({ type: 'assistant_delta', text: event.delta.text });
+        } else if (event.delta.type === 'thinking_delta') {
+          state.thinkingOpen = true;
+          state.thinkingStreamed = true;
+          callbacks.onEvent({ type: 'thinking_delta', text: event.delta.thinking });
+        }
+        return;
+      }
+      if (event.type === 'content_block_stop' && state.thinkingOpen) {
+        state.thinkingOpen = false;
+        callbacks.onEvent({ type: 'thinking_finished' });
       }
       return;
     }
 
     case 'assistant': {
-      const text = message.message.content
-        .filter((block) => block.type === 'text')
-        .map((block) => block.text)
-        .join('');
-      if (text) {
-        callbacks.onEvent({ type: 'assistant_message', text });
+      const parentToolCallId = message.parent_tool_use_id ?? undefined;
+      const content = message.message.content;
+
+      if (!parentToolCallId) {
+        // Only when partial messages were off, or the block streamed before we cared.
+        const thinking = content
+          .filter((block) => block.type === 'thinking')
+          .map((block) => block.thinking)
+          .join('');
+        if (thinking && !state.thinkingStreamed) {
+          callbacks.onEvent({ type: 'thinking_delta', text: thinking });
+          callbacks.onEvent({ type: 'thinking_finished' });
+        }
+        state.thinkingStreamed = false;
+
+        const text = content
+          .filter((block) => block.type === 'text')
+          .map((block) => block.text)
+          .join('');
+        if (text) {
+          callbacks.onEvent({ type: 'assistant_message', text });
+        }
       }
-      for (const block of message.message.content) {
+
+      for (const block of content) {
         if (block.type === 'tool_use') {
           callbacks.onEvent({
             type: 'tool_call_started',
             toolCallId: block.id,
             name: block.name,
             input: block.input,
+            parentToolCallId,
           });
         }
       }
@@ -106,6 +141,7 @@ function emit(message: SDKMessage, callbacks: TurnCallbacks): void {
             toolCallId: block.tool_use_id,
             output: toolResultText(block.content),
             isError: block.is_error ?? false,
+            parentToolCallId: message.parent_tool_use_id ?? undefined,
           });
         }
       }
