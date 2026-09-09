@@ -6,6 +6,20 @@ inside an *environment* — your local machine today, a remote sandbox or VPS la
 Phase 1 is the backend under `packages/`; phase 2 is the Next.js control plane and UI under
 `apps/web`.
 
+## Prerequisites
+
+- Node 22+, pnpm, git.
+- Claude Code, installed and logged in:
+
+  ```sh
+  irm https://claude.ai/install.ps1 | iex        # Windows
+  curl -fsSL https://claude.ai/install.sh | bash  # macOS / Linux
+  claude                                          # run once to log in
+  ```
+
+  Without it, set `RUNNER_AGENT=fake` to drive the scripted adapter instead; the UI works, the
+  agent is canned. The sidebar says so if Claude Code is missing or logged out.
+
 ## Architecture
 
 Ports and adapters, with three moving parts:
