@@ -133,10 +133,14 @@ curl http://127.0.0.1:4310/healthz
 `apps/web` is the control plane: it owns the `LocalProvider`, so it spawns a runner per
 environment rather than talking to one you started yourself.
 
+With Claude Code installed and logged in (`claude /login`), no configuration is needed:
+
 ```sh
-cp apps/web/.env.example apps/web/.env.local   # RUNNER_AGENT=fake runs the UI without Claude
-pnpm dev:web                                   # http://localhost:3000
+pnpm dev:web   # http://localhost:3000
 ```
+
+To run the UI on a machine without Claude, copy `apps/web/.env.example` to
+`apps/web/.env.local`; it selects the scripted `fake` agent.
 
 The dev and build scripts compile `packages/*` first: the app imports the workspace packages
 from their `dist/`, and the provider prefers the runner's compiled `dist/main.js` when spawning.
@@ -151,11 +155,12 @@ the runner and drives it directly — the Next.js server is not in the message p
 | `GET /api/environments/:id` | Environment status. |
 | `DELETE /api/environments/:id` | Destroys the environment and kills its runner. |
 
-`RUNNER_AGENT` and `CLAUDE_BINARY` are read from the Next.js process and forwarded into every
-runner it spawns. Use the real agent with:
+`RUNNER_AGENT` and `CLAUDE_BINARY` are optional overrides read from the Next.js process and
+forwarded into every runner it spawns. The defaults are the real agent and the `claude`
+executable found on `PATH`; set `CLAUDE_BINARY` only when it lives somewhere else:
 
 ```sh
-RUNNER_AGENT=claude CLAUDE_BINARY="$(command -v claude)" pnpm dev:web
+CLAUDE_BINARY=/opt/claude/bin/claude pnpm dev:web
 ```
 
 The API is local-only and unauthenticated: it hands out runner tokens, so do not expose it.
