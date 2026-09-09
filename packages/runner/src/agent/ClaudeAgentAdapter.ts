@@ -23,6 +23,8 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       cwd: params.cwd,
       pathToClaudeCodeExecutable: this.options.pathToClaudeCodeExecutable,
       permissionMode: this.options.permissionMode ?? 'default',
+      // SDK default is a minimal prompt; use the CLI's so sessions behave like the terminal.
+      systemPrompt: { type: 'preset', preset: 'claude_code' },
       includePartialMessages: true,
       env: { ...process.env, ...this.options.env },
       canUseTool: async (toolName, input) => {

@@ -20,10 +20,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
 
   const agent = env.RUNNER_AGENT === 'fake' ? 'fake' : 'claude';
-  const claudeBinary =
-    agent === 'fake' ? undefined : (env.CLAUDE_BINARY?.trim() || resolveClaudeBinary());
-  if (agent === 'claude' && !claudeBinary) {
-    throw new Error('Could not find the `claude` executable on PATH; set CLAUDE_BINARY');
+  const override = env.CLAUDE_BINARY?.trim();
+  const claudeBinary = agent === 'fake' ? undefined : override || resolveClaudeBinary();
+  if (agent === 'claude') {
+    if (!claudeBinary) {
+      throw new Error('Could not find the `claude` executable on PATH; set CLAUDE_BINARY');
+    }
+    // An override is never probed by resolveClaudeBinary, so check it here rather
+    // than letting a bad path surface as a spawn failure on the first turn.
+    if (override && !isExecutable(override)) {
+      throw new Error(`CLAUDE_BINARY is not an executable file: ${override}`);
+    }
   }
 
   return {
@@ -45,13 +52,17 @@ function resolveClaudeBinary(): string | undefined {
   for (const dir of (process.env.PATH ?? '').split(delimiter).filter(Boolean)) {
     for (const name of names) {
       const candidate = isAbsolute(dir) ? join(dir, name) : resolve(dir, name);
-      try {
-        accessSync(candidate, constants.X_OK);
-        return candidate;
-      } catch {
-        // Not here; keep looking.
-      }
+      if (isExecutable(candidate)) return candidate;
     }
   }
   return undefined;
+}
+
+function isExecutable(path: string): boolean {
+  try {
+    accessSync(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
