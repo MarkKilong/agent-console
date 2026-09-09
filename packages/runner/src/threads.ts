@@ -1,6 +1,10 @@
-import type { Event, EventBody, PermissionDecision } from '@agent-console/contracts';
+import type { Event, EventBody, PermissionDecision, ThreadSummary } from '@agent-console/contracts';
+import type { AgentKind } from './config.js';
+import { MemoryThreadStore, type ThreadMeta, type ThreadStore } from './thread-store.js';
 
 export type EventListener = (event: Event) => void;
+
+const MAX_TITLE = 60;
 
 /** The turn currently running on a thread, as far as the transport layer cares. */
 export interface ActiveTurn {
@@ -11,23 +15,59 @@ export interface ActiveTurn {
 type ThreadState = {
   events: Event[];
   listeners: Set<EventListener>;
-  sessionId?: string;
+  meta: ThreadMeta;
   turn?: ActiveTurn;
   baseTree?: string;
 };
 
-/** In-memory event log per thread. One active turn at a time. */
+/** Event log per thread, mirrored to a store. One active turn at a time. */
 export class ThreadRegistry {
   private readonly threads = new Map<string, ThreadState>();
+
+  constructor(
+    private readonly store: ThreadStore = new MemoryThreadStore(),
+    private readonly agent: AgentKind = 'claude',
+  ) {
+    for (const stored of store.load()) {
+      this.threads.set(stored.id, {
+        events: stored.events,
+        listeners: new Set(),
+        meta: stored.meta,
+      });
+    }
+  }
 
   append(threadId: string, body: EventBody): Event {
     const thread = this.thread(threadId);
     const event = { ...body, seq: thread.events.length + 1, threadId, ts: Date.now() } as Event;
     thread.events.push(event);
+    thread.meta.updatedAt = event.ts;
+    this.store.appendEvent(threadId, event);
     for (const listener of thread.listeners) {
       listener(event);
     }
     return event;
+  }
+
+  /** Threads with something in them, newest activity first. */
+  list(): ThreadSummary[] {
+    return [...this.threads]
+      .filter(([, thread]) => thread.events.length > 0)
+      .map(([id, thread]) => ({
+        id,
+        title: thread.meta.title,
+        agent: thread.meta.agent,
+        updatedAt: thread.meta.updatedAt,
+      }))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  /** The first prompt names the thread. */
+  notePrompt(threadId: string, prompt: string): void {
+    const thread = this.thread(threadId);
+    if (thread.meta.title) return;
+    thread.meta.title = prompt.trim().replace(/\s+/g, ' ').slice(0, MAX_TITLE);
+    this.store.writeMeta(threadId, thread.meta);
   }
 
   eventsAfter(threadId: string, afterSeq = 0): Event[] {
@@ -55,14 +95,19 @@ export class ThreadRegistry {
   }
 
   sessionId(threadId: string): string | undefined {
-    return this.thread(threadId).sessionId;
+    return this.thread(threadId).meta.sessionId;
   }
 
   setSessionId(threadId: string, sessionId: string): void {
-    this.thread(threadId).sessionId = sessionId;
+    const thread = this.thread(threadId);
+    thread.meta.sessionId = sessionId;
+    this.store.writeMeta(threadId, thread.meta);
   }
 
-  /** Tree snapshot taken when the thread's latest turn started; the anchor for its diff. */
+  /**
+   * Tree snapshot taken when the thread's latest turn started; the anchor for its diff.
+   * Deliberately not persisted: a git object id only means something within one run.
+   */
   baseTree(threadId: string): string | undefined {
     return this.thread(threadId).baseTree;
   }
@@ -81,7 +126,12 @@ export class ThreadRegistry {
   private thread(threadId: string): ThreadState {
     let thread = this.threads.get(threadId);
     if (!thread) {
-      thread = { events: [], listeners: new Set() };
+      const now = Date.now();
+      thread = {
+        events: [],
+        listeners: new Set(),
+        meta: { title: '', agent: this.agent, createdAt: now, updatedAt: now },
+      };
       this.threads.set(threadId, thread);
     }
     return thread;

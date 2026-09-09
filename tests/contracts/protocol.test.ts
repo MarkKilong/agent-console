@@ -15,6 +15,11 @@ describe('commands', () => {
     expect(CommandSchema.parse(command)).toEqual(command);
   });
 
+  it('round-trips list_threads', () => {
+    const command = { type: 'list_threads', requestId: 'r1' };
+    expect(CommandSchema.parse(command)).toEqual(command);
+  });
+
   it('rejects an unknown command type', () => {
     expect(CommandSchema.safeParse({ type: 'nope', threadId: 't1' }).success).toBe(false);
   });
@@ -43,6 +48,55 @@ describe('events', () => {
     expect(EventSchema.parse(event)).toEqual(event);
   });
 
+  it('round-trips user_message and the thinking pair', () => {
+    const envelope = { seq: 1, threadId: 't1', ts: 1700000000000 };
+    for (const body of [
+      { type: 'user_message', text: 'do the thing' },
+      { type: 'thinking_delta', text: 'weighing options' },
+      { type: 'thinking_finished' },
+    ]) {
+      const event = { ...envelope, ...body };
+      expect(EventSchema.parse(event)).toEqual(event);
+    }
+  });
+
+  it('round-trips a sub-agent tool call tagged with its parent', () => {
+    const started = {
+      type: 'tool_call_started',
+      seq: 4,
+      threadId: 't1',
+      ts: 1700000000000,
+      toolCallId: 'child',
+      name: 'Read',
+      input: { file_path: 'a.ts' },
+      parentToolCallId: 'task-1',
+    };
+    expect(EventSchema.parse(started)).toEqual(started);
+
+    const finished = {
+      type: 'tool_call_finished',
+      seq: 5,
+      threadId: 't1',
+      ts: 1700000000000,
+      toolCallId: 'child',
+      isError: false,
+      parentToolCallId: 'task-1',
+    };
+    expect(EventSchema.parse(finished)).toEqual(finished);
+  });
+
+  it('leaves parentToolCallId off a top-level tool call', () => {
+    const event = {
+      type: 'tool_call_finished',
+      seq: 6,
+      threadId: 't1',
+      ts: 1700000000000,
+      toolCallId: 'top',
+      isError: false,
+    };
+    expect(EventSchema.parse(event)).toEqual(event);
+  });
+
   it('rejects an event without seq', () => {
     const result = EventSchema.safeParse({ type: 'turn_started', threadId: 't1', ts: 0 });
     expect(result.success).toBe(false);
@@ -55,6 +109,17 @@ describe('responses', () => {
       requestId: 'r1',
       ok: true,
       data: { files: [{ path: 'a.ts', status: 'modified', patch: '@@' }] },
+    };
+    expect(ResponseSchema.parse(response)).toEqual(response);
+  });
+
+  it('round-trips an ok list_threads response', () => {
+    const response = {
+      requestId: 'r1',
+      ok: true,
+      data: {
+        threads: [{ id: 't1', title: 'ship it', agent: 'claude', updatedAt: 1700000000000 }],
+      },
     };
     expect(ResponseSchema.parse(response)).toEqual(response);
   });

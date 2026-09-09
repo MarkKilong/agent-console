@@ -28,6 +28,8 @@ export function testConfig(cwd: string, token = 'test-token'): Config {
     codexBinary: undefined,
     codexModel: undefined,
     permissionMode: 'default',
+    // Sibling of the temp repo, so thread logs never show up in its diff.
+    threadsDir: `${cwd}-threads`,
   };
 }
 

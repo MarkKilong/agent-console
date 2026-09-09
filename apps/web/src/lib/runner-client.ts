@@ -7,11 +7,12 @@ import {
 
 export type ConnectionStatus = 'connecting' | 'open' | 'closed';
 
-/** The three commands the runner answers with a `response` message. */
+/** The commands the runner answers with a `response` message. */
 export type RequestCommand =
   | { type: 'list_files'; path?: string }
   | { type: 'read_file'; path: string }
-  | { type: 'get_diff'; threadId?: string };
+  | { type: 'get_diff'; threadId?: string }
+  | { type: 'list_threads' };
 
 export type RunnerClientOptions = {
   url: string;

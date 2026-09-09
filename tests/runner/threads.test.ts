@@ -1,5 +1,9 @@
+import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Event } from '@agent-console/contracts';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { FileThreadStore, MemoryThreadStore } from '../../packages/runner/src/thread-store.js';
 import { ThreadRegistry } from '../../packages/runner/src/threads.js';
 
 describe('ThreadRegistry', () => {
@@ -73,5 +77,68 @@ describe('ThreadRegistry', () => {
     registry.append('t1', { type: 'turn_finished', stopReason: 'end_turn' });
     expect(registry.eventsAfter('t1', 1).map((event) => event.type)).toEqual(['turn_finished']);
     expect(registry.eventsAfter('t1').map((event) => event.type)).toHaveLength(2);
+  });
+});
+
+describe('ThreadRegistry persistence', () => {
+  const dirs: string[] = [];
+
+  afterEach(async () => {
+    for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  async function tempDir(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), 'agent-console-threads-'));
+    dirs.push(dir);
+    return dir;
+  }
+
+  it('rebuilds from the store it wrote to', () => {
+    const store = new MemoryThreadStore();
+    const registry = new ThreadRegistry(store, 'fake');
+    registry.notePrompt('t1', 'ship the thing');
+    registry.append('t1', { type: 'turn_started' });
+    registry.append('t1', { type: 'assistant_message', text: 'done' });
+    registry.setSessionId('t1', 'session-1');
+
+    const reloaded = new ThreadRegistry(store, 'fake');
+    expect(reloaded.eventsAfter('t1').map((event) => event.type)).toEqual([
+      'turn_started',
+      'assistant_message',
+    ]);
+    expect(reloaded.sessionId('t1')).toBe('session-1');
+    expect(reloaded.list()).toEqual([
+      { id: 't1', title: 'ship the thing', agent: 'fake', updatedAt: expect.any(Number) },
+    ]);
+    // seq carries on from the restored log rather than restarting.
+    expect(reloaded.append('t1', { type: 'turn_finished', stopReason: 'end_turn' }).seq).toBe(3);
+  });
+
+  it('reloads from disk and skips a torn final line', async () => {
+    const dir = await tempDir();
+    const registry = new ThreadRegistry(new FileThreadStore(dir), 'fake');
+    registry.notePrompt('t1', `${'long prompt '.repeat(10)}tail`);
+    registry.append('t1', { type: 'turn_started' });
+    registry.setSessionId('t1', 'session-1');
+
+    // What a crash mid-append leaves behind.
+    await appendFile(join(dir, 't1.jsonl'), '{"type":"turn_fini');
+
+    const reloaded = new ThreadRegistry(new FileThreadStore(dir), 'fake');
+    expect(reloaded.eventsAfter('t1').map((event) => event.type)).toEqual(['turn_started']);
+    expect(reloaded.sessionId('t1')).toBe('session-1');
+    expect(reloaded.list()[0]?.title).toHaveLength(60);
+  });
+
+  it('keeps going when the log cannot be written', async () => {
+    const dir = await tempDir();
+    await writeFile(join(dir, 'blocker'), '');
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    // A file where the directory should be: every mkdir and append fails.
+    const registry = new ThreadRegistry(new FileThreadStore(join(dir, 'blocker', 'threads')));
+    expect(registry.append('t1', { type: 'turn_started' }).seq).toBe(1);
+    expect(errors).toHaveBeenCalled();
   });
 });

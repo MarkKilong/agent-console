@@ -29,7 +29,10 @@ const envelope = {
 };
 
 export const EventSchema = z.discriminatedUnion('type', [
+  z.object({ ...envelope, type: z.literal('user_message'), text: z.string() }),
   z.object({ ...envelope, type: z.literal('turn_started') }),
+  z.object({ ...envelope, type: z.literal('thinking_delta'), text: z.string() }),
+  z.object({ ...envelope, type: z.literal('thinking_finished') }),
   z.object({ ...envelope, type: z.literal('assistant_delta'), text: z.string() }),
   z.object({ ...envelope, type: z.literal('assistant_message'), text: z.string() }),
   z.object({
@@ -38,6 +41,8 @@ export const EventSchema = z.discriminatedUnion('type', [
     toolCallId: z.string(),
     name: z.string(),
     input: z.unknown(),
+    /** Set when a sub-agent made the call; the id of the tool call that spawned it. */
+    parentToolCallId: z.string().optional(),
   }),
   z.object({
     ...envelope,
@@ -45,6 +50,7 @@ export const EventSchema = z.discriminatedUnion('type', [
     toolCallId: z.string(),
     output: z.string().optional(),
     isError: z.boolean(),
+    parentToolCallId: z.string().optional(),
   }),
   z.object({
     ...envelope,

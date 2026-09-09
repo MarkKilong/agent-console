@@ -3,7 +3,7 @@ import { parseUnifiedDiff } from '@/lib/parse-unified-diff';
 
 export type ChatItem =
   | { kind: 'user'; id: string; text: string }
-  | { kind: 'assistant'; id: string; text: string; streaming: boolean }
+  | { kind: 'assistant'; id: string; text: string; streaming: boolean; thinking?: string }
   | {
       kind: 'tool';
       id: string;
@@ -12,6 +12,7 @@ export type ChatItem =
       output: string | undefined;
       isError: boolean;
       done: boolean;
+      parentToolCallId: string | undefined;
     }
   | {
       kind: 'summary';
@@ -59,13 +60,6 @@ export function threadStatus(thread: ThreadState | undefined): ThreadStatus {
   return thread.turnActive ? 'working' : 'idle';
 }
 
-export function withUserMessage(thread: ThreadState, text: string): ThreadState {
-  return {
-    ...thread,
-    items: [...thread.items, { kind: 'user', id: `user-${thread.items.length}`, text }],
-  };
-}
-
 /** Folds one event into the view state. Replaying an old seq is a no-op. */
 export function foldEvent(thread: ThreadState, event: Event): ThreadState {
   if (event.seq <= thread.lastSeq) return thread;
@@ -78,12 +72,20 @@ export function foldEvent(thread: ThreadState, event: Event): ThreadState {
   };
 
   switch (event.type) {
+    case 'user_message':
+      next.items.push({ kind: 'user', id: `user-${event.seq}`, text: event.text });
+      break;
+
     case 'turn_started':
       next.turnActive = true;
       next.turns = [
         ...thread.turns,
         { index: thread.turns.length, startedAt: event.ts, files: [], added: 0, removed: 0 },
       ];
+      break;
+
+    case 'thinking_delta':
+      appendThinking(next.items, event.text, event.seq);
       break;
 
     case 'assistant_delta':
@@ -103,6 +105,7 @@ export function foldEvent(thread: ThreadState, event: Event): ThreadState {
         output: undefined,
         isError: false,
         done: false,
+        parentToolCallId: event.parentToolCallId,
       });
       break;
 
@@ -193,6 +196,23 @@ function appendDelta(items: ChatItem[], text: string, seq: number): void {
     return;
   }
   items.push({ kind: 'assistant', id: `assistant-${seq}`, text, streaming: true });
+}
+
+/** Reasoning belongs to the answer it precedes, so it folds onto the same item. */
+function appendThinking(items: ChatItem[], text: string, seq: number): void {
+  const index = openAssistantIndex(items);
+  const open = index >= 0 ? items[index] : undefined;
+  if (open?.kind === 'assistant') {
+    items[index] = { ...open, thinking: (open.thinking ?? '') + text };
+    return;
+  }
+  items.push({
+    kind: 'assistant',
+    id: `assistant-${seq}`,
+    text: '',
+    streaming: true,
+    thinking: text,
+  });
 }
 
 /** The final text supersedes the deltas that streamed the same block. */

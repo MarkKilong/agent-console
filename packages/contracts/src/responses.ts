@@ -18,10 +18,25 @@ export const GetDiffDataSchema = z.object({
 });
 export type GetDiffData = z.infer<typeof GetDiffDataSchema>;
 
+/** One row of the thread list; the events themselves still arrive via `subscribe`. */
+export const ThreadSummarySchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  agent: z.string(),
+  updatedAt: z.number().int().nonnegative(),
+});
+export type ThreadSummary = z.infer<typeof ThreadSummarySchema>;
+
+export const ListThreadsDataSchema = z.object({
+  threads: z.array(ThreadSummarySchema),
+});
+export type ListThreadsData = z.infer<typeof ListThreadsDataSchema>;
+
 export const ResponseDataSchema = z.union([
   ListFilesDataSchema,
   ReadFileDataSchema,
   GetDiffDataSchema,
+  ListThreadsDataSchema,
 ]);
 export type ResponseData = z.infer<typeof ResponseDataSchema>;
 

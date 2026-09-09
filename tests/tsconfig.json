@@ -3,7 +3,9 @@
   "compilerOptions": {
     "noEmit": true,
     "paths": {
-      "@agent-console/contracts": ["../packages/contracts/src/index.ts"]
+      "@agent-console/contracts": ["../packages/contracts/src/index.ts"],
+      // The web app resolves with a bundler, so its aliased imports carry no extension.
+      "@/*": ["../apps/web/src/*", "../apps/web/src/*.ts", "../apps/web/src/*.tsx"]
     }
   },
   "include": ["**/*.ts", "../vitest.config.ts"]

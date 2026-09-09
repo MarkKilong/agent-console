@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto';
 import { accessSync, constants } from 'node:fs';
+import { homedir } from 'node:os';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
 
 export type AgentKind = 'claude' | 'codex' | 'fake';
@@ -13,6 +15,8 @@ export type Config = {
   codexBinary: string | undefined;
   codexModel: string | undefined;
   permissionMode: string;
+  /** Where this workspace's thread logs live. */
+  threadsDir: string;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -46,16 +50,25 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     }
   }
 
+  const cwd = resolve(env.RUNNER_CWD?.trim() || process.cwd());
   return {
     port: Number(env.RUNNER_PORT ?? 4310),
     token,
-    cwd: resolve(env.RUNNER_CWD?.trim() || process.cwd()),
+    cwd,
     agent,
     claudeBinary,
     codexBinary,
     codexModel: env.CODEX_MODEL?.trim() || undefined,
     permissionMode: env.RUNNER_PERMISSION_MODE?.trim() || 'default',
+    threadsDir: threadsDir(env, cwd),
   };
+}
+
+function threadsDir(env: NodeJS.ProcessEnv, cwd: string): string {
+  const root = env.AGENT_CONSOLE_DATA_DIR?.trim() || join(homedir(), '.agent-console');
+  // Windows paths are case-insensitive, so fold case before hashing the workspace.
+  const normalized = process.platform === 'win32' ? cwd.toLowerCase() : cwd;
+  return join(root, createHash('sha1').update(normalized).digest('hex').slice(0, 12), 'threads');
 }
 
 function agentKind(value: string | undefined): AgentKind {

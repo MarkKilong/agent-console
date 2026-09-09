@@ -9,6 +9,8 @@ export default defineConfig({
       '@agent-console/contracts': fileURLToPath(
         new URL('packages/contracts/src/index.ts', import.meta.url),
       ),
+      // The web app's own alias, so its modules can be tested where they sit.
+      '@': fileURLToPath(new URL('apps/web/src', import.meta.url)),
     },
   },
   test: {

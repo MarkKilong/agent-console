@@ -17,7 +17,7 @@ type Props = {
 export function ChatPane({ client, threadId, onShowFiles }: Props) {
   const environment = useConsoleStore((state) => state.environment);
   const title = useConsoleStore((state) => (threadId ? state.threadMeta[threadId]?.title : null));
-  const addUserMessage = useConsoleStore((state) => state.addUserMessage);
+  const notePrompt = useConsoleStore((state) => state.notePrompt);
   const thread = useThread(threadId);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,7 +36,7 @@ export function ChatPane({ client, threadId, onShowFiles }: Props) {
     if (!client || !threadId) return;
     guard(() => {
       client.send({ type: 'send_prompt', threadId, text });
-      addUserMessage(threadId, text);
+      notePrompt(threadId, text);
     });
   }
 

@@ -12,6 +12,7 @@ export function Console() {
   const id = useConsoleStore((state) => state.environment?.id);
   const url = useConsoleStore((state) => state.environment?.url);
   const token = useConsoleStore((state) => state.environment?.token);
+  const status = useConsoleStore((state) => state.environment?.status);
   const activeThreadId = useConsoleStore((state) => state.activeThreadId);
 
   // Tagged with its thread so switching threads drops the selection by derivation.
@@ -32,6 +33,21 @@ export function Console() {
     client?.connect();
     return () => client?.dispose();
   }, [client]);
+
+  // The runner survives the browser, so ask it for the threads it already has.
+  useEffect(() => {
+    if (!client || status !== 'open') return;
+    let live = true;
+    client
+      .request({ type: 'list_threads' })
+      .then((data) => {
+        if (live && 'threads' in data) useConsoleStore.getState().hydrateThreads(data.threads);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [client, status]);
 
   // Every thread the user visits gets its own subscription, replayed from its cursor.
   useEffect(() => {

@@ -1,20 +1,24 @@
-import { writeFile } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
+import type { Config } from '../../packages/runner/src/config.js';
 import { startServer, type RunnerServer } from '../../packages/runner/src/server.js';
-import { connect, makeRepo, testConfig } from './helpers.js';
+import { connect, makeRepo, testConfig, type TestClient } from './helpers.js';
 
 let repo: string;
+let config: Config;
 let server: RunnerServer;
 
 beforeEach(async () => {
   repo = await makeRepo();
-  server = await startServer(testConfig(repo));
+  config = testConfig(repo);
+  server = await startServer(config);
 });
 
 afterEach(async () => {
   await server.close();
+  await rm(config.threadsDir, { recursive: true, force: true });
 });
 
 describe('healthz', () => {
@@ -54,18 +58,37 @@ describe('a full turn', () => {
     const diffReady = await client.waitForEvent((event) => event.type === 'diff_ready');
 
     expect(client.events.map((event) => event.type)).toEqual([
+      'user_message',
       'turn_started',
+      'thinking_delta',
+      'thinking_finished',
       'assistant_delta',
       'assistant_delta',
       'tool_call_started',
       'permission_requested',
       'permission_resolved',
       'tool_call_finished',
+      'tool_call_started',
+      'tool_call_started',
+      'tool_call_finished',
+      'tool_call_finished',
       'assistant_message',
       'turn_finished',
       'diff_ready',
     ]);
-    expect(client.events.map((event) => event.seq)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(client.events.map((event) => event.seq)).toEqual(
+      Array.from({ length: 17 }, (_, index) => index + 1),
+    );
+
+    // The sub-agent's own call is tagged with the Task call that spawned it.
+    const task = client.events.find(
+      (event) => event.type === 'tool_call_started' && event.name === 'Task',
+    );
+    if (task?.type !== 'tool_call_started') throw new Error('unreachable');
+    const nested = client.events.filter(
+      (event) => 'parentToolCallId' in event && event.parentToolCallId === task.toolCallId,
+    );
+    expect(nested.map((event) => event.type)).toEqual(['tool_call_started', 'tool_call_finished']);
 
     if (diffReady.type !== 'diff_ready') throw new Error('unreachable');
     // untracked.txt predates the turn, so only the mid-turn write is reported.
@@ -79,6 +102,40 @@ describe('a full turn', () => {
     expect(scoped.ok && 'files' in scoped.data && scoped.data.files).toEqual([
       expect.objectContaining({ path: 'during-turn.txt', status: 'added' }),
     ]);
+
+    client.close();
+  }, 15000);
+
+  it('reports an adapter failure as error then turn_finished', async () => {
+    const client = await connect(server.port, 'test-token');
+    client.send({ type: 'subscribe', threadId: 't1' });
+    client.send({ type: 'send_prompt', threadId: 't1', text: 'fail-turn please' });
+
+    await client.waitForEvent((event) => event.type === 'diff_ready');
+    expect(client.events.map((event) => event.type)).toEqual([
+      'user_message',
+      'turn_started',
+      'error',
+      'turn_finished',
+      'diff_ready',
+    ]);
+    expect(client.events.find((event) => event.type === 'turn_finished')).toMatchObject({
+      stopReason: 'error',
+    });
+
+    client.close();
+  }, 15000);
+
+  it('stops a turn that is stopped in the same tick it was started', async () => {
+    const client = await connect(server.port, 'test-token');
+    client.send({ type: 'subscribe', threadId: 't1' });
+    client.send({ type: 'send_prompt', threadId: 't1', text: 'stop me' });
+    client.send({ type: 'stop_turn', threadId: 't1' });
+
+    const finished = await client.waitForEvent((event) => event.type === 'turn_finished');
+    expect(finished).toMatchObject({ stopReason: 'stopped' });
+    // The adapter never ran, so it never asked for anything.
+    expect(client.events.some((event) => event.type === 'permission_requested')).toBe(false);
 
     client.close();
   }, 15000);
@@ -129,4 +186,62 @@ describe('request/response commands', () => {
 
     client.close();
   }, 15000);
+
+  it('lists threads a previous runner persisted, newest first', async () => {
+    const client = await connect(server.port, 'test-token');
+    await runTurn(client, 't1', 'first prompt');
+    await runTurn(client, 't2', 'second prompt');
+    client.close();
+
+    // A second runner over the same log directory, as if the first had been killed.
+    await server.close();
+    server = await startServer(config);
+
+    const reopened = await connect(server.port, 'test-token');
+    reopened.send({ type: 'list_threads', requestId: 'r5' });
+    const listed = await reopened.waitForResponse('r5');
+    expect(listed.ok && 'threads' in listed.data && listed.data.threads).toEqual([
+      { id: 't2', title: 'second prompt', agent: 'fake', updatedAt: expect.any(Number) },
+      { id: 't1', title: 'first prompt', agent: 'fake', updatedAt: expect.any(Number) },
+    ]);
+
+    reopened.close();
+  }, 15000);
+
+  it('replays the user prompt after a restart, so reopened history is complete', async () => {
+    const client = await connect(server.port, 'test-token');
+    await runTurn(client, 't1', 'remember me');
+    client.close();
+
+    await server.close();
+    server = await startServer(config);
+
+    const reopened = await connect(server.port, 'test-token');
+    reopened.send({ type: 'subscribe', threadId: 't1' });
+    const replayed = await reopened.waitForEvent((event) => event.type === 'diff_ready');
+    expect(replayed.threadId).toBe('t1');
+
+    const prompt = reopened.events.find((event) => event.type === 'user_message');
+    expect(prompt).toMatchObject({ seq: 1, text: 'remember me' });
+
+    reopened.close();
+  }, 15000);
 });
+
+async function runTurn(client: TestClient, threadId: string, text: string): Promise<void> {
+  client.send({ type: 'subscribe', threadId });
+  client.send({ type: 'send_prompt', threadId, text });
+
+  const permission = await client.waitForEvent(
+    (event) => event.type === 'permission_requested' && event.threadId === threadId,
+  );
+  if (permission.type !== 'permission_requested') throw new Error('unreachable');
+
+  client.send({
+    type: 'answer_permission',
+    threadId,
+    requestId: permission.requestId,
+    decision: 'allow',
+  });
+  await client.waitForEvent((event) => event.type === 'diff_ready' && event.threadId === threadId);
+}

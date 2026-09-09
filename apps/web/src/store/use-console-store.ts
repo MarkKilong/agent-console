@@ -1,7 +1,7 @@
-import type { Event } from '@agent-console/contracts';
+import type { Event, ThreadSummary } from '@agent-console/contracts';
 import { create } from 'zustand';
 import type { ConnectionStatus } from '@/lib/runner-client';
-import { emptyThread, foldEvent, withUserMessage, type ThreadState } from './thread-state';
+import { emptyThread, foldEvent, type ThreadState } from './thread-state';
 
 export type EnvironmentInfo = {
   id: string;
@@ -29,9 +29,10 @@ type ConsoleStore = {
   closeEnvironment(): void;
   setStatus(status: ConnectionStatus): void;
   newThread(): void;
+  hydrateThreads(threads: ThreadSummary[]): void;
   selectThread(threadId: string): void;
   applyEvent(event: Event): void;
-  addUserMessage(threadId: string, text: string): void;
+  notePrompt(threadId: string, text: string): void;
 };
 
 export const useConsoleStore = create<ConsoleStore>((set) => ({
@@ -62,6 +63,25 @@ export const useConsoleStore = create<ConsoleStore>((set) => ({
       };
     }),
 
+  // The runner's threads all predate this session's, so they go after them.
+  hydrateThreads: (threads) =>
+    set((state) => {
+      const restored = threads.filter((thread) => !state.threadMeta[thread.id]);
+      const metas = restored.map((thread) => ({
+        id: thread.id,
+        title: thread.title || 'New thread',
+        // The list is ordered by last activity, so that is what the row should show.
+        createdAt: thread.updatedAt,
+      }));
+      return {
+        threadOrder: [...state.threadOrder, ...metas.map((meta) => meta.id)],
+        threadMeta: {
+          ...state.threadMeta,
+          ...Object.fromEntries(metas.map((meta) => [meta.id, meta])),
+        },
+      };
+    }),
+
   selectThread: (threadId) => set({ activeThreadId: threadId }),
 
   applyEvent: (event) =>
@@ -72,14 +92,9 @@ export const useConsoleStore = create<ConsoleStore>((set) => ({
       },
     })),
 
-  addUserMessage: (threadId, text) =>
-    set((state) => ({
-      threads: {
-        ...state.threads,
-        [threadId]: withUserMessage(state.threads[threadId] ?? emptyThread(), text),
-      },
-      threadMeta: titled(state.threadMeta, threadId, text),
-    })),
+  // The prompt itself renders from the runner's `user_message` event, not from here.
+  notePrompt: (threadId, text) =>
+    set((state) => ({ threadMeta: titled(state.threadMeta, threadId, text) })),
 }));
 
 export function useThread(threadId: string | null): ThreadState {

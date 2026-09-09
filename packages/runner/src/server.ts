@@ -11,6 +11,7 @@ import type { Config } from './config.js';
 import { listWorkspaceFiles, readWorkspaceFile } from './files.js';
 import { collectDiff, diffTrees, snapshotTree } from './git/diff.js';
 import { decodeCommand, encode, encodeEvent, encodeResponse } from './protocol.js';
+import { FileThreadStore } from './thread-store.js';
 import { ThreadRegistry } from './threads.js';
 import { startTurn, type TurnDeps } from './turns.js';
 
@@ -23,7 +24,7 @@ export type RunnerServer = {
 
 export async function startServer(config: Config): Promise<RunnerServer> {
   const deps: TurnDeps = {
-    registry: new ThreadRegistry(),
+    registry: new ThreadRegistry(new FileThreadStore(config.threadsDir), config.agent),
     adapter: createAdapter(config),
     cwd: config.cwd,
   };
@@ -51,6 +52,8 @@ export async function startServer(config: Config): Promise<RunnerServer> {
     port,
     close: async () => {
       deps.registry.stopActiveTurns();
+      // Shutdown runs through here, so no agent subprocess outlives the runner.
+      await deps.adapter.close?.();
       for (const client of wss.clients) client.terminate();
       await new Promise<void>((resolve, reject) =>
         wss.close((error) => (error ? reject(error) : resolve())),
@@ -105,6 +108,7 @@ async function dispatch(
     }
 
     case 'send_prompt':
+      registry.notePrompt(command.threadId, command.text);
       startTurn(deps, command.threadId, command.text);
       return;
 
@@ -146,6 +150,10 @@ async function dispatch(
       await reply(socket, command.requestId, async () => ({
         files: await diffFor(deps, command.threadId),
       }));
+      return;
+
+    case 'list_threads':
+      await reply(socket, command.requestId, async () => ({ threads: registry.list() }));
       return;
   }
 }
