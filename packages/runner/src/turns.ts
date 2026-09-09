@@ -70,8 +70,14 @@ class Turn implements ActiveTurn {
         registry.setSessionId(this.threadId, result.sessionId);
       }
     } catch (error) {
-      registry.append(this.threadId, { type: 'error', message: describe(error) });
-      registry.append(this.threadId, { type: 'turn_finished', stopReason: 'error' });
+      // Adapters reject when their in-flight request is aborted; a stop the user
+      // asked for is not an error, whichever adapter it came from.
+      if (this.stopped) {
+        registry.append(this.threadId, { type: 'turn_finished', stopReason: 'stopped' });
+      } else {
+        registry.append(this.threadId, { type: 'error', message: describe(error) });
+        registry.append(this.threadId, { type: 'turn_finished', stopReason: 'error' });
+      }
     } finally {
       this.denyPending();
       await this.emitDiff();

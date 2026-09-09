@@ -140,6 +140,30 @@ describe('a full turn', () => {
     client.close();
   }, 15000);
 
+  it('reports a stop that aborts the adapter as stopped, not as an error', async () => {
+    const client = await connect(server.port, 'test-token');
+    client.send({ type: 'subscribe', threadId: 't1' });
+    client.send({ type: 'send_prompt', threadId: 't1', text: 'hang-turn please' });
+
+    // Wait for the adapter to be running, so the stop aborts it rather than pre-empting it.
+    await client.waitForEvent((event) => event.type === 'assistant_delta');
+    client.send({ type: 'stop_turn', threadId: 't1' });
+
+    await client.waitForEvent((event) => event.type === 'diff_ready');
+    expect(client.events.map((event) => event.type)).toEqual([
+      'user_message',
+      'turn_started',
+      'assistant_delta',
+      'turn_finished',
+      'diff_ready',
+    ]);
+    expect(client.events.find((event) => event.type === 'turn_finished')).toMatchObject({
+      stopReason: 'stopped',
+    });
+
+    client.close();
+  }, 15000);
+
   it('rejects a second prompt while a turn is running', async () => {
     const client = await connect(server.port, 'test-token');
     client.send({ type: 'subscribe', threadId: 't1' });

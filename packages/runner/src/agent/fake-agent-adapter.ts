@@ -6,6 +6,8 @@ import type { AgentAdapter, StartTurnParams, TurnCallbacks, TurnResult } from '.
  */
 export class FakeAgentAdapter implements AgentAdapter {
   private readonly stopped = new Set<string>();
+  /** Releases a `hang-turn` prompt when stop() lands. */
+  private readonly hanging = new Map<string, () => void>();
 
   async startTurn(params: StartTurnParams, callbacks: TurnCallbacks): Promise<TurnResult> {
     const { threadId, prompt } = params;
@@ -13,6 +15,13 @@ export class FakeAgentAdapter implements AgentAdapter {
 
     // Keyword hook so tests can drive the failure path (an auth error, say).
     if (prompt.includes('fail-turn')) throw new Error('fake adapter failure');
+
+    // Keyword hook for the stop path: run until stop(), then reject the way an aborted query does.
+    if (prompt.includes('hang-turn')) {
+      callbacks.onEvent({ type: 'assistant_delta', text: 'Working. ' });
+      await new Promise<void>((resolve) => this.hanging.set(threadId, resolve));
+      throw new Error('Operation aborted');
+    }
 
     callbacks.onEvent({ type: 'thinking_delta', text: 'Deciding what to do. ' });
     callbacks.onEvent({ type: 'thinking_finished' });
@@ -85,5 +94,7 @@ export class FakeAgentAdapter implements AgentAdapter {
 
   stop(threadId: string): void {
     this.stopped.add(threadId);
+    this.hanging.get(threadId)?.();
+    this.hanging.delete(threadId);
   }
 }
