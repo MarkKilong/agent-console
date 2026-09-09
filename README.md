@@ -20,6 +20,26 @@ Phase 1 is the backend under `packages/`; phase 2 is the Next.js control plane a
   Without it, set `RUNNER_AGENT=fake` to drive the scripted adapter instead; the UI works, the
   agent is canned. The sidebar says so if Claude Code is missing or logged out.
 
+### Codex
+
+Codex is the second harness. Install and log in:
+
+```sh
+npm install -g @openai/codex
+codex login
+```
+
+Pick **Codex** in the sidebar before opening a project and that environment runs the Codex
+adapter; **Claude** is the other choice, and the picker starts on `RUNNER_AGENT`. The sidebar
+shows the same install/login notice for whichever agent is selected.
+
+The adapter drives `codex app-server` over newline-delimited JSON-RPC. Threads run with the
+app-server's `on-request` approval policy inside its `workspace-write` sandbox, so Codex asks
+before it runs a command or writes a file and each request becomes a `permission_requested`
+event like Claude's. Set `CODEX_BINARY` when the executable is not on `PATH` (the Windows
+`codex.cmd` shim from npm is fine — the adapter runs it through a shell), and `CODEX_MODEL` to
+pin the model.
+
 ## Architecture
 
 Ports and adapters, with three moving parts:
@@ -114,9 +134,11 @@ falls back to the whole workspace against HEAD.
 | `RUNNER_TOKEN` | *(required)* | Shared secret. The runner refuses to start without it. |
 | `RUNNER_PORT` | `4310` | HTTP/WebSocket port. |
 | `RUNNER_CWD` | `process.cwd()` | Repository root. File reads and diffs are confined to it. |
-| `RUNNER_AGENT` | `claude` | `claude` for the real SDK, `fake` for the scripted test adapter. |
+| `RUNNER_AGENT` | `claude` | `claude` for the real SDK, `codex` for `codex app-server`, `fake` for the scripted test adapter. |
 | `RUNNER_PERMISSION_MODE` | `default` | Passed through to the SDK's `permissionMode`. |
 | `CLAUDE_BINARY` | resolved from `PATH` | Path to the Claude Code executable. On Windows the runner looks for `claude.exe` only: the SDK spawns the binary without a shell, so a `.cmd` shim would fail. |
+| `CODEX_BINARY` | resolved from `PATH` | Path to the Codex executable. `codex.cmd`, `codex.exe` or `codex` on Windows; the adapter runs a shim through a shell. |
+| `CODEX_MODEL` | *(CLI default)* | Model passed to `thread/start`. |
 
 Clients authenticate with `?token=…` on the WebSocket URL or an `Authorization: Bearer …`
 header. A bad token closes the socket with code `4401`. `GET /healthz` is unauthenticated and
@@ -165,13 +187,14 @@ the runner and drives it directly — the Next.js server is not in the message p
 
 | Route | Does |
 | --- | --- |
-| `POST /api/environments` | `{repoPath}` → creates an environment and returns `{id, url, token}`. |
+| `POST /api/environments` | `{repoPath, agent?}` → creates an environment and returns `{id, url, token}`. `agent` is `claude` or `codex` and overrides `RUNNER_AGENT` for that environment. |
 | `GET /api/environments/:id` | Environment status. |
 | `DELETE /api/environments/:id` | Destroys the environment and kills its runner. |
 
-`RUNNER_AGENT` and `CLAUDE_BINARY` are optional overrides read from the Next.js process and
-forwarded into every runner it spawns. The defaults are the real agent and the `claude`
-executable found on `PATH`; set `CLAUDE_BINARY` only when it lives somewhere else:
+`RUNNER_AGENT`, `CLAUDE_BINARY`, `CODEX_BINARY` and `CODEX_MODEL` are optional overrides read
+from the Next.js process and forwarded into every runner it spawns. The defaults are the real
+agent and the `claude` executable found on `PATH`; set `CLAUDE_BINARY` only when it lives
+somewhere else:
 
 ```sh
 CLAUDE_BINARY=/opt/claude/bin/claude pnpm dev:web
