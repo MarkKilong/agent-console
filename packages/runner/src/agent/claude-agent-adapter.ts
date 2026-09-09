@@ -31,6 +31,8 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       // SDK default is a minimal prompt; use the CLI's so sessions behave like the terminal.
       systemPrompt: { type: 'preset', preset: 'claude_code' },
       includePartialMessages: true,
+      // The CLI omits thinking text by default on Claude 5; 'summarized' streams it back.
+      thinking: { type: 'adaptive', display: 'summarized' },
       env: { ...process.env, ...this.options.env },
       canUseTool: async (toolName, input) => {
         const decision = await callbacks.requestPermission({ toolName, input });

@@ -23,7 +23,12 @@ export class FakeAgentAdapter implements AgentAdapter {
       throw new Error('Operation aborted');
     }
 
-    callbacks.onEvent({ type: 'thinking_delta', text: 'Deciding what to do. ' });
+    callbacks.onEvent({
+      type: 'thinking_delta',
+      text:
+        'The request needs a file written, so a Write call is the smallest step that satisfies it. ' +
+        'I will confirm the path first, then delegate the read-back to a sub-agent.',
+    });
     callbacks.onEvent({ type: 'thinking_finished' });
     callbacks.onEvent({ type: 'assistant_delta', text: 'Working on: ' });
     callbacks.onEvent({ type: 'assistant_delta', text: prompt });

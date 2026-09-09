@@ -1,10 +1,11 @@
 'use client';
 
 import type { PermissionDecision } from '@agent-console/contracts';
-import { CircleAlert, FileDiff } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { ChevronDown, ChevronRight, CircleAlert, FileDiff } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { cn } from '@/lib/cn';
 import type { ChatItem, PendingPermission } from '@/store/thread-state';
 import { PermissionCard } from './permission-card';
 import { ToolCallRow } from './tool-call-row';
@@ -58,9 +59,14 @@ function Message({ item, onShowFiles }: { item: ChatItem; onShowFiles(turn: numb
 
     case 'assistant':
       return (
-        <div className="prose-chat w-full min-w-0 leading-relaxed text-fg/85">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
-          {item.streaming ? <span className="ml-0.5 animate-pulse text-muted">▍</span> : null}
+        <div className="w-full min-w-0 space-y-1.5">
+          {item.thinking ? (
+            <ThinkingBlock text={item.thinking} live={item.streaming && item.text === ''} />
+          ) : null}
+          <div className="prose-chat leading-relaxed text-fg/85">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
+            {item.streaming ? <span className="ml-0.5 animate-pulse text-muted">▍</span> : null}
+          </div>
         </div>
       );
 
@@ -99,4 +105,28 @@ function Message({ item, onShowFiles }: { item: ChatItem; onShowFiles(turn: numb
         </div>
       );
   }
+}
+
+/** Collapsed by default, but self-opens while the reasoning is all there is to show. */
+function ThinkingBlock({ text, live }: { text: string; live: boolean }) {
+  const [override, setOverride] = useState<boolean | null>(null);
+  const open = override ?? live;
+
+  return (
+    <div>
+      <button
+        onClick={() => setOverride(!open)}
+        className="flex min-h-6 cursor-pointer items-center gap-1 rounded-md px-0.5 py-0.5 text-xs text-muted transition-colors hover:bg-white/5"
+      >
+        <span className={cn(live && 'animate-pulse')}>Thinking</span>
+        {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+      </button>
+
+      {open ? (
+        <div className="mt-1 rounded-lg border border-line bg-raised px-2.5 py-2 text-[11px] leading-relaxed whitespace-pre-wrap text-muted">
+          {text}
+        </div>
+      ) : null}
+    </div>
+  );
 }
