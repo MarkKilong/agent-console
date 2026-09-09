@@ -9,15 +9,19 @@ Phase 1 is the backend under `packages/`; phase 2 is the Next.js control plane a
 ## Prerequisites
 
 - Node 22+, pnpm, git.
-- Claude Code, installed and logged in:
+- Claude Code, installed:
 
   ```sh
   irm https://claude.ai/install.ps1 | iex        # Windows
   curl -fsSL https://claude.ai/install.sh | bash  # macOS / Linux
-  claude                                          # run once to log in
   ```
 
-  Without it, set `RUNNER_AGENT=fake` to drive the scripted adapter instead; the UI works, the
+  Log in either in a terminal (`claude`, then complete the login) or in the app: open a
+  repository and use the **Connect Claude** card in the sidebar, which drives
+  `claude auth login` inside the environment — you approve in the browser and paste the code
+  back. The card also accepts a Console API key instead.
+
+  Without Claude Code, set `RUNNER_AGENT=fake` to drive the scripted adapter; the UI works, the
   agent is canned. The sidebar says so if Claude Code is missing or logged out.
 
 ### Codex
@@ -139,6 +143,9 @@ falls back to the whole workspace against HEAD.
 | `CLAUDE_BINARY`          | resolved from `PATH` | Path to the Claude Code executable. On Windows the runner looks for `claude.exe` only: the SDK spawns the binary without a shell, so a `.cmd` shim would fail. |
 | `CODEX_BINARY`           | resolved from `PATH` | Path to the Codex executable. `codex.cmd`, `codex.exe` or `codex` on Windows; the adapter runs a shim through a shell.                                         |
 | `CODEX_MODEL`            | _(CLI default)_      | Model passed to `thread/start`.                                                                                                                                |
+| `CLAUDE_CONFIG_DIR`      | _(machine default)_  | Where the Claude CLI keeps `.credentials.json`. Set it to give an environment its own login; the runner passes it to every `claude auth` it runs.              |
+| `ANTHROPIC_API_KEY`      | _(stored key)_       | Not read from the environment: the **API key** tab writes it to `<data dir>/credentials.json` (0600) and the runner injects it into the SDK for each turn.     |
+| `AGENT_CONSOLE_DATA_DIR` | `~/.agent-console`   | Root of the per-workspace data dir holding thread logs and the stored API key.                                                                                 |
 
 Clients authenticate with `?token=…` on the WebSocket URL or an `Authorization: Bearer …`
 header. A bad token closes the socket with code `4401`. `GET /healthz` is unauthenticated and
@@ -207,8 +214,8 @@ the runner and drives it directly — the Next.js server is not in the message p
 | `GET /api/environments/:id`    | Environment status.                                                                                                                                             |
 | `DELETE /api/environments/:id` | Destroys the environment and kills its runner.                                                                                                                  |
 
-`RUNNER_AGENT`, `CLAUDE_BINARY`, `CODEX_BINARY` and `CODEX_MODEL` are optional overrides read
-from the Next.js process and forwarded into every runner it spawns. The defaults are the real
+`RUNNER_AGENT`, `CLAUDE_BINARY`, `CODEX_BINARY`, `CODEX_MODEL` and `CLAUDE_CONFIG_DIR` are
+optional overrides read from the Next.js process and forwarded into every runner it spawns. The defaults are the real
 agent and the `claude` executable found on `PATH`; set `CLAUDE_BINARY` only when it lives
 somewhere else:
 

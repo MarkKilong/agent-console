@@ -1,7 +1,8 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   ServerMessageSchema,
   type Command,
@@ -9,6 +10,7 @@ import {
   type Response,
 } from '@agent-console/contracts';
 import { WebSocket } from 'ws';
+import { ClaudeAuth, type SpawnCli } from '../../packages/runner/src/auth/claude-auth.js';
 import type { Config } from '../../packages/runner/src/config.js';
 
 export async function makeRepo(): Promise<string> {
@@ -28,9 +30,29 @@ export function testConfig(cwd: string, token = 'test-token'): Config {
     codexBinary: undefined,
     codexModel: undefined,
     permissionMode: 'default',
+    claudeConfigDir: undefined,
+    dataDir: `${cwd}-data`,
     // Sibling of the temp repo, so thread logs never show up in its diff.
     threadsDir: `${cwd}-threads`,
   };
+}
+
+const FAKE_CLAUDE = fileURLToPath(new URL('fixtures/fake-claude-auth.mjs', import.meta.url));
+
+/** The fixture is a script, so what ClaudeAuth calls a binary runs through Node. */
+const spawnFakeClaude: SpawnCli = (binary, args, options) =>
+  spawn(process.execPath, [binary, ...args], options);
+
+/** `ClaudeAuth` driving the fixture CLI, with both its directories under `root`. */
+export function fakeClaudeAuth(root: string): ClaudeAuth {
+  return new ClaudeAuth({
+    binary: FAKE_CLAUDE,
+    configDir: join(root, 'claude'),
+    dataDir: join(root, 'data'),
+    // Set so the nested-claude guard has something to strip.
+    env: { ...process.env, CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'cli' },
+    spawn: spawnFakeClaude,
+  });
 }
 
 export type TestClient = {

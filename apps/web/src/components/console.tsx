@@ -34,7 +34,8 @@ export function Console() {
     return () => client?.dispose();
   }, [client]);
 
-  // The runner survives the browser, so ask it for the threads it already has.
+  // The runner survives the browser, so ask it for the threads it already has —
+  // and for whether Claude is logged in inside that environment.
   useEffect(() => {
     if (!client || status !== 'open') return;
     let live = true;
@@ -44,6 +45,7 @@ export function Console() {
         if (live && 'threads' in data) useConsoleStore.getState().hydrateThreads(data.threads);
       })
       .catch(() => {});
+    void useConsoleStore.getState().refreshAuth(client);
     return () => {
       live = false;
     };
@@ -62,7 +64,7 @@ export function Console() {
           The three defaults add up to ~100% of a laptop window, so the group has
           nothing to normalise away, and the px max keeps the sidebar narrow. */}
       <Panel defaultSize={260} minSize={220} maxSize={340} className="min-w-0 border-r border-line">
-        <ThreadsSidebar />
+        <ThreadsSidebar client={client} />
       </Panel>
       <Separator className="w-px" />
       <Panel defaultSize="50" minSize="30" className="min-w-0">

@@ -1,10 +1,11 @@
-import { rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import type { Config } from '../../packages/runner/src/config.js';
 import { startServer, type RunnerServer } from '../../packages/runner/src/server.js';
-import { connect, makeRepo, testConfig, type TestClient } from './helpers.js';
+import { connect, fakeClaudeAuth, makeRepo, testConfig, type TestClient } from './helpers.js';
 
 let repo: string;
 let config: Config;
@@ -250,6 +251,54 @@ describe('request/response commands', () => {
 
     reopened.close();
   }, 15000);
+});
+
+describe('auth commands', () => {
+  it('reports nothing to connect when the environment has no Claude CLI', async () => {
+    const client = await connect(server.port, 'test-token');
+
+    client.send({ type: 'auth_status', requestId: 'a0' });
+    const status = await client.waitForResponse('a0');
+    expect(status.ok && status.data).toEqual({
+      loggedIn: true,
+      authMethod: 'none',
+      apiKey: false,
+      loginPending: false,
+    });
+
+    client.send({ type: 'auth_logout', requestId: 'a1' });
+    const refused = await client.waitForResponse('a1');
+    expect(refused.ok).toBe(false);
+
+    client.close();
+  }, 15000);
+
+  it('logs in over the socket and reports the account afterwards', async () => {
+    await server.close();
+    const root = await mkdtemp(join(tmpdir(), 'agent-console-server-auth-'));
+    server = await startServer(config, fakeClaudeAuth(root));
+    const client = await connect(server.port, 'test-token');
+
+    client.send({ type: 'auth_login_start', requestId: 'a1', mode: 'claudeai' });
+    const started = await client.waitForResponse('a1');
+    expect(started.ok && 'authUrl' in started.data && started.data.authUrl).toMatch(/^https:\/\//);
+
+    client.send({ type: 'auth_login_code', requestId: 'a2', code: 'good-code' });
+    expect(await client.waitForResponse('a2')).toMatchObject({ ok: true, data: { ok: true } });
+
+    client.send({ type: 'auth_status', requestId: 'a3' });
+    const status = await client.waitForResponse('a3');
+    expect(status.ok && status.data).toMatchObject({ loggedIn: true, email: 'dev@example.com' });
+
+    client.send({ type: 'auth_set_api_key', requestId: 'a4', key: 'sk-ant-test' });
+    expect(await client.waitForResponse('a4')).toMatchObject({ ok: true });
+
+    client.send({ type: 'auth_status', requestId: 'a5' });
+    const withKey = await client.waitForResponse('a5');
+    expect(withKey.ok && withKey.data).toMatchObject({ apiKey: true });
+
+    client.close();
+  }, 20000);
 });
 
 async function runTurn(client: TestClient, threadId: string, text: string): Promise<void> {

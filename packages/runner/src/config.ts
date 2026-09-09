@@ -15,6 +15,10 @@ export type Config = {
   codexBinary: string | undefined;
   codexModel: string | undefined;
   permissionMode: string;
+  /** Config dir the Claude CLI reads credentials from; unset means the machine default. */
+  claudeConfigDir: string | undefined;
+  /** Per-workspace state the runner owns: thread logs, the stored API key. */
+  dataDir: string;
   /** Where this workspace's thread logs live. */
   threadsDir: string;
 };
@@ -51,6 +55,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
 
   const cwd = resolve(env.RUNNER_CWD?.trim() || process.cwd());
+  const data = dataDir(env, cwd);
   return {
     port: Number(env.RUNNER_PORT ?? 4310),
     token,
@@ -60,15 +65,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     codexBinary,
     codexModel: env.CODEX_MODEL?.trim() || undefined,
     permissionMode: env.RUNNER_PERMISSION_MODE?.trim() || 'default',
-    threadsDir: threadsDir(env, cwd),
+    claudeConfigDir: env.CLAUDE_CONFIG_DIR?.trim() || undefined,
+    dataDir: data,
+    threadsDir: join(data, 'threads'),
   };
 }
 
-function threadsDir(env: NodeJS.ProcessEnv, cwd: string): string {
+function dataDir(env: NodeJS.ProcessEnv, cwd: string): string {
   const root = env.AGENT_CONSOLE_DATA_DIR?.trim() || join(homedir(), '.agent-console');
   // Windows paths are case-insensitive, so fold case before hashing the workspace.
   const normalized = process.platform === 'win32' ? cwd.toLowerCase() : cwd;
-  return join(root, createHash('sha1').update(normalized).digest('hex').slice(0, 12), 'threads');
+  return join(root, createHash('sha1').update(normalized).digest('hex').slice(0, 12));
 }
 
 function agentKind(value: string | undefined): AgentKind {

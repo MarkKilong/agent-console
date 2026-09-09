@@ -31,9 +31,12 @@ export function runnerEnv(agent?: 'claude' | 'codex'): Record<string, string> {
   const claudeBinary = process.env.CLAUDE_BINARY?.trim();
   const codexBinary = process.env.CODEX_BINARY?.trim();
   const codexModel = process.env.CODEX_MODEL?.trim();
+  // Where the runner's `claude auth` writes credentials; unset means the machine default.
+  const claudeConfigDir = process.env.CLAUDE_CONFIG_DIR?.trim();
   if (chosen) env.RUNNER_AGENT = chosen;
   if (claudeBinary) env.CLAUDE_BINARY = claudeBinary;
   if (codexBinary) env.CODEX_BINARY = codexBinary;
   if (codexModel) env.CODEX_MODEL = codexModel;
+  if (claudeConfigDir) env.CLAUDE_CONFIG_DIR = claudeConfigDir;
   return env;
 }

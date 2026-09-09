@@ -1,12 +1,14 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import {
   PROTOCOL_VERSION,
+  type AuthStatusData,
   type Command,
   type DiffFile,
   type Response,
 } from '@agent-console/contracts';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { createAdapter } from './agent/create-adapter.js';
+import { ClaudeAuth } from './auth/claude-auth.js';
 import type { Config } from './config.js';
 import { listWorkspaceFiles, readWorkspaceFile } from './files.js';
 import { collectDiff, diffTrees, snapshotTree } from './git/diff.js';
@@ -22,11 +24,25 @@ export type RunnerServer = {
   close(): Promise<void>;
 };
 
-export async function startServer(config: Config): Promise<RunnerServer> {
-  const deps: TurnDeps = {
+/** Answer for environments with no Claude CLI to log in: nothing for the UI to offer. */
+const AUTH_NOT_APPLICABLE: AuthStatusData = {
+  loggedIn: true,
+  authMethod: 'none',
+  apiKey: false,
+  loginPending: false,
+};
+
+type ServerDeps = TurnDeps & { auth: ClaudeAuth | undefined };
+
+export async function startServer(
+  config: Config,
+  auth: ClaudeAuth | undefined = createClaudeAuth(config),
+): Promise<RunnerServer> {
+  const deps: ServerDeps = {
     registry: new ThreadRegistry(new FileThreadStore(config.threadsDir), config.agent),
-    adapter: createAdapter(config),
+    adapter: createAdapter(config, () => auth?.apiKey()),
     cwd: config.cwd,
+    auth,
   };
 
   const http = createServer((request, response) => {
@@ -51,6 +67,7 @@ export async function startServer(config: Config): Promise<RunnerServer> {
   return {
     port,
     close: async () => {
+      deps.auth?.close();
       deps.registry.stopActiveTurns();
       // Shutdown runs through here, so no agent subprocess outlives the runner.
       await deps.adapter.close?.();
@@ -65,7 +82,7 @@ export async function startServer(config: Config): Promise<RunnerServer> {
   };
 }
 
-function handleConnection(socket: WebSocket, deps: TurnDeps): void {
+function handleConnection(socket: WebSocket, deps: ServerDeps): void {
   const subscriptions = new Map<string, () => void>();
 
   socket.send(
@@ -90,7 +107,7 @@ function handleConnection(socket: WebSocket, deps: TurnDeps): void {
 async function dispatch(
   command: Command,
   socket: WebSocket,
-  deps: TurnDeps,
+  deps: ServerDeps,
   subscriptions: Map<string, () => void>,
 ): Promise<void> {
   const { registry } = deps;
@@ -155,7 +172,62 @@ async function dispatch(
     case 'list_threads':
       await reply(socket, command.requestId, async () => ({ threads: registry.list() }));
       return;
+
+    case 'auth_status':
+      await reply(socket, command.requestId, async () =>
+        deps.auth ? deps.auth.status() : AUTH_NOT_APPLICABLE,
+      );
+      return;
+
+    case 'auth_login_start':
+      await reply(socket, command.requestId, async () => ({
+        authUrl: await requireAuth(deps).loginStart(command.mode),
+      }));
+      return;
+
+    case 'auth_login_code':
+      await reply(socket, command.requestId, async () => {
+        await requireAuth(deps).loginCode(command.code);
+        return { ok: true };
+      });
+      return;
+
+    case 'auth_logout':
+      await reply(socket, command.requestId, async () => {
+        await requireAuth(deps).logout();
+        return { ok: true };
+      });
+      return;
+
+    case 'auth_set_api_key':
+      await reply(socket, command.requestId, async () => {
+        requireAuth(deps).setApiKey(command.key);
+        return { ok: true };
+      });
+      return;
+
+    case 'auth_clear_api_key':
+      await reply(socket, command.requestId, async () => {
+        requireAuth(deps).clearApiKey();
+        return { ok: true };
+      });
+      return;
   }
+}
+
+function createClaudeAuth(config: Config): ClaudeAuth | undefined {
+  if (!config.claudeBinary) return undefined;
+  return new ClaudeAuth({
+    binary: config.claudeBinary,
+    configDir: config.claudeConfigDir,
+    dataDir: config.dataDir,
+    env: process.env,
+  });
+}
+
+function requireAuth(deps: ServerDeps): ClaudeAuth {
+  if (!deps.auth) throw new Error('This environment has no Claude CLI to log in');
+  return deps.auth;
 }
 
 /**

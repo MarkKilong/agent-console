@@ -32,11 +32,38 @@ export const ListThreadsDataSchema = z.object({
 });
 export type ListThreadsData = z.infer<typeof ListThreadsDataSchema>;
 
+/** What the runner knows about the Claude login inside its environment. */
+export const AuthStatusDataSchema = z.object({
+  loggedIn: z.boolean(),
+  /** `claude.ai`, `console`, `none`, … — whatever the CLI reports. */
+  authMethod: z.string(),
+  email: z.string().optional(),
+  orgName: z.string().optional(),
+  subscriptionType: z.string().optional(),
+  /** An `ANTHROPIC_API_KEY` is stored for this environment. */
+  apiKey: z.boolean(),
+  /** A login is waiting for its code. */
+  loginPending: z.boolean(),
+});
+export type AuthStatusData = z.infer<typeof AuthStatusDataSchema>;
+
+export const AuthLoginStartDataSchema = z.object({
+  authUrl: z.string(),
+});
+export type AuthLoginStartData = z.infer<typeof AuthLoginStartDataSchema>;
+
+/** Answer to the auth commands that only succeed or fail. */
+export const OkDataSchema = z.object({ ok: z.literal(true) });
+export type OkData = z.infer<typeof OkDataSchema>;
+
 export const ResponseDataSchema = z.union([
   ListFilesDataSchema,
   ReadFileDataSchema,
   GetDiffDataSchema,
   ListThreadsDataSchema,
+  AuthStatusDataSchema,
+  AuthLoginStartDataSchema,
+  OkDataSchema,
 ]);
 export type ResponseData = z.infer<typeof ResponseDataSchema>;
 

@@ -12,6 +12,8 @@ export type ClaudeAgentAdapterOptions = {
   permissionMode?: PermissionMode;
   /** Extra variables layered onto process.env for the Claude Code subprocess. */
   env?: Record<string, string>;
+  /** Read per turn: the key can be set or cleared while the runner is up. */
+  apiKey?: () => string | undefined;
 };
 
 export class ClaudeAgentAdapter implements AgentAdapter {
@@ -23,6 +25,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     const abortController = new AbortController();
     this.aborts.set(params.threadId, abortController);
 
+    const apiKey = this.options.apiKey?.();
     const options: Options = {
       abortController,
       cwd: params.cwd,
@@ -33,7 +36,11 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       includePartialMessages: true,
       // The CLI omits thinking text by default on Claude 5; 'summarized' streams it back.
       thinking: { type: 'adaptive', display: 'summarized' },
-      env: { ...process.env, ...this.options.env },
+      env: {
+        ...process.env,
+        ...this.options.env,
+        ...(apiKey ? { ANTHROPIC_API_KEY: apiKey } : {}),
+      },
       canUseTool: async (toolName, input) => {
         const decision = await callbacks.requestPermission({ toolName, input });
         return decision === 'allow'

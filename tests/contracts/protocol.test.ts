@@ -20,6 +20,28 @@ describe('commands', () => {
     expect(CommandSchema.parse(command)).toEqual(command);
   });
 
+  it('round-trips the auth commands', () => {
+    for (const command of [
+      { type: 'auth_status', requestId: 'r1' },
+      { type: 'auth_login_start', requestId: 'r1', mode: 'console' },
+      { type: 'auth_login_code', requestId: 'r1', code: 'abc' },
+      { type: 'auth_logout', requestId: 'r1' },
+      { type: 'auth_set_api_key', requestId: 'r1', key: 'sk-ant' },
+      { type: 'auth_clear_api_key', requestId: 'r1' },
+    ]) {
+      expect(CommandSchema.parse(command)).toEqual(command);
+    }
+  });
+
+  it('rejects an unknown auth login mode', () => {
+    const result = CommandSchema.safeParse({
+      type: 'auth_login_start',
+      requestId: 'r1',
+      mode: 'bedrock',
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('rejects an unknown command type', () => {
     expect(CommandSchema.safeParse({ type: 'nope', threadId: 't1' }).success).toBe(false);
   });
@@ -121,6 +143,26 @@ describe('responses', () => {
         threads: [{ id: 't1', title: 'ship it', agent: 'claude', updatedAt: 1700000000000 }],
       },
     };
+    expect(ResponseSchema.parse(response)).toEqual(response);
+  });
+
+  it('round-trips an auth_status response', () => {
+    const response = {
+      requestId: 'r1',
+      ok: true,
+      data: {
+        loggedIn: true,
+        authMethod: 'claude.ai',
+        email: 'dev@example.com',
+        apiKey: false,
+        loginPending: false,
+      },
+    };
+    expect(ResponseSchema.parse(response)).toEqual(response);
+  });
+
+  it('round-trips an ok-only auth response', () => {
+    const response = { requestId: 'r1', ok: true, data: { ok: true } };
     expect(ResponseSchema.parse(response)).toEqual(response);
   });
 

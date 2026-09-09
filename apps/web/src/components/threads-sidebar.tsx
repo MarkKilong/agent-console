@@ -5,11 +5,13 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { Preflight } from '@/server/preflight';
 import { cn } from '@/lib/cn';
 import { relativeTime } from '@/lib/relative-time';
+import type { RunnerClient } from '@/lib/runner-client';
 import { threadStatus, type ThreadStatus } from '@/store/thread-state';
 import { useConsoleStore } from '@/store/use-console-store';
+import { ConnectClaudeCard } from './connect-claude-card';
 import { Button, Dot, IconButton, Spinner } from './ui';
 
-export function ThreadsSidebar() {
+export function ThreadsSidebar({ client }: { client: RunnerClient | null }) {
   const [search, setSearch] = useState('');
 
   const environment = useConsoleStore((state) => state.environment);
@@ -34,6 +36,8 @@ export function ThreadsSidebar() {
 
       {environment ? (
         <>
+          <ConnectClaudeCard client={client} />
+
           <div className="flex shrink-0 items-center gap-1 px-2 pb-1">
             <label className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-muted focus-within:bg-white/5 hover:bg-white/5">
               <Search className="size-4 shrink-0 opacity-80" />
@@ -326,7 +330,8 @@ function PreflightNotice({ state, agent }: { state: Preflight | null; agent: Age
         <>
           <p className="text-danger">Claude Code is not logged in.</p>
           <p className="text-muted">
-            Run <code className="text-fg/80">claude</code> in a terminal and complete the login.
+            Open a repository and use <span className="text-fg/80">Connect Claude</span> in the
+            sidebar, or run <code className="text-fg/80">claude</code> in a terminal.
           </p>
         </>
       ) : (
