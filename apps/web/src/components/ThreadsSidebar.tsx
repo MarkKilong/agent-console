@@ -1,7 +1,7 @@
 'use client';
 
 import { Folder, Search, SquarePen, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { Preflight } from '@/server/preflight';
 import { cn } from '@/lib/cn';
 import { relativeTime } from '@/lib/relativeTime';
@@ -155,6 +155,12 @@ function ProjectHeader() {
   const [repoPath, setRepoPath] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [picked, setPicked] = useState<AgentChoice | null>(null);
+
+  const preflight = usePreflight();
+  // RUNNER_AGENT=fake leaves nothing to choose: the runner uses the scripted adapter.
+  const choosable = preflight !== null && preflight.defaultAgent !== 'fake';
+  const agent: AgentChoice = picked ?? (preflight?.defaultAgent === 'codex' ? 'codex' : 'claude');
 
   async function open() {
     setBusy(true);
@@ -163,7 +169,7 @@ function ProjectHeader() {
       const response = await fetch('/api/environments', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ repoPath }),
+        body: JSON.stringify({ repoPath, ...(choosable ? { agent } : {}) }),
       });
       const body = (await response.json()) as
         | { id: string; url: string; token: string }
@@ -215,7 +221,8 @@ function ProjectHeader() {
 
   return (
     <div className="shrink-0 space-y-2 px-3 py-2">
-      <PreflightNotice />
+      {choosable ? <AgentPicker value={agent} onChange={setPicked} /> : null}
+      <PreflightNotice state={choosable ? preflight : null} agent={agent} />
       <input
         value={repoPath}
         onChange={(event) => setRepoPath(event.target.value)}
@@ -238,8 +245,35 @@ function ProjectHeader() {
   );
 }
 
-/** Tells the user Claude Code is missing or logged out before they try to open a project. */
-function PreflightNotice() {
+type AgentChoice = 'claude' | 'codex';
+
+const AGENT_LABELS: Record<AgentChoice, string> = { claude: 'Claude', codex: 'Codex' };
+
+function AgentPicker({
+  value,
+  onChange,
+}: {
+  value: AgentChoice;
+  onChange(agent: AgentChoice): void;
+}) {
+  return (
+    <div className="flex gap-1" role="group" aria-label="Agent">
+      {(Object.keys(AGENT_LABELS) as AgentChoice[]).map((agent) => (
+        <Button
+          key={agent}
+          variant={agent === value ? 'primary' : 'ghost'}
+          className="flex-1"
+          aria-pressed={agent === value}
+          onClick={() => onChange(agent)}
+        >
+          {AGENT_LABELS[agent]}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+function usePreflight(): Preflight | null {
   const [state, setState] = useState<Preflight | null>(null);
 
   useEffect(() => {
@@ -255,37 +289,71 @@ function PreflightNotice() {
     };
   }, []);
 
-  if (!state || state.agent !== 'claude') return null;
+  return state;
+}
 
-  if (!state.claudeBinary) {
+/** Tells the user the selected CLI is missing or logged out before they open a project. */
+function PreflightNotice({ state, agent }: { state: Preflight | null; agent: AgentChoice }) {
+  if (!state) return null;
+  const { binary, loggedIn } = state[agent];
+  if (binary && loggedIn !== false) return null;
+
+  if (agent === 'codex') {
     return (
-      <div className="space-y-1 rounded-lg border border-line bg-raised p-2 text-[11px]">
-        <p className="text-danger">Claude Code is not installed.</p>
-        <p className="text-muted">Windows:</p>
-        <code className="block break-all text-fg/80">irm https://claude.ai/install.ps1 | iex</code>
-        <p className="text-muted">macOS/Linux:</p>
-        <code className="block break-all text-fg/80">
-          curl -fsSL https://claude.ai/install.sh | bash
-        </code>
-        <p className="text-muted">
-          then run <code className="text-fg/80">claude</code> once to log in
-        </p>
-      </div>
+      <Notice>
+        {binary ? (
+          <>
+            <p className="text-danger">Codex CLI is not logged in.</p>
+            <p className="text-muted">
+              Run <code className="text-fg/80">codex login</code> in a terminal.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-danger">Codex CLI is not installed.</p>
+            <code className="block break-all text-fg/80">npm install -g @openai/codex</code>
+            <p className="text-muted">
+              then run <code className="text-fg/80">codex login</code>
+            </p>
+          </>
+        )}
+      </Notice>
     );
   }
 
-  if (state.loggedIn === false) {
-    return (
-      <div className="space-y-1 rounded-lg border border-line bg-raised p-2 text-[11px]">
-        <p className="text-danger">Claude Code is not logged in.</p>
-        <p className="text-muted">
-          Run <code className="text-fg/80">claude</code> in a terminal and complete the login.
-        </p>
-      </div>
-    );
-  }
+  return (
+    <Notice>
+      {binary ? (
+        <>
+          <p className="text-danger">Claude Code is not logged in.</p>
+          <p className="text-muted">
+            Run <code className="text-fg/80">claude</code> in a terminal and complete the login.
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="text-danger">Claude Code is not installed.</p>
+          <p className="text-muted">Windows:</p>
+          <code className="block break-all text-fg/80">irm https://claude.ai/install.ps1 | iex</code>
+          <p className="text-muted">macOS/Linux:</p>
+          <code className="block break-all text-fg/80">
+            curl -fsSL https://claude.ai/install.sh | bash
+          </code>
+          <p className="text-muted">
+            then run <code className="text-fg/80">claude</code> once to log in
+          </p>
+        </>
+      )}
+    </Notice>
+  );
+}
 
-  return null;
+function Notice({ children }: { children: ReactNode }) {
+  return (
+    <div className="space-y-1 rounded-lg border border-line bg-raised p-2 text-[11px]">
+      {children}
+    </div>
+  );
 }
 
 function repoName(path: string): string {

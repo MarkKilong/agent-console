@@ -21,12 +21,19 @@ export function getProvider(): Promise<EnvironmentProvider> {
   return globalForProvider.agentConsoleProvider;
 }
 
-/** Runner settings this process is allowed to forward into the environment. */
-export function runnerEnv(): Record<string, string> {
+/**
+ * Runner settings this process is allowed to forward into the environment.
+ * `agent`, when the request picked one, wins over the process-level default.
+ */
+export function runnerEnv(agent?: 'claude' | 'codex'): Record<string, string> {
   const env: Record<string, string> = {};
-  const agent = process.env.RUNNER_AGENT?.trim();
+  const chosen = agent ?? process.env.RUNNER_AGENT?.trim();
   const claudeBinary = process.env.CLAUDE_BINARY?.trim();
-  if (agent) env.RUNNER_AGENT = agent;
+  const codexBinary = process.env.CODEX_BINARY?.trim();
+  const codexModel = process.env.CODEX_MODEL?.trim();
+  if (chosen) env.RUNNER_AGENT = chosen;
   if (claudeBinary) env.CLAUDE_BINARY = claudeBinary;
+  if (codexBinary) env.CODEX_BINARY = codexBinary;
+  if (codexModel) env.CODEX_MODEL = codexModel;
   return env;
 }
