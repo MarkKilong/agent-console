@@ -45,6 +45,24 @@ describe('LocalProvider', () => {
     expect(Date.now() - started).toBeLessThan(10_000);
   }, 30_000);
 
+  it('reuses the running environment for a folder instead of spawning a second runner', async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), 'agent-console-local-'));
+    execFileSync('git', ['init', '-q'], { cwd: repoPath });
+
+    const provider = createProvider('local');
+    const first = await provider.create({ repoPath, env: { RUNNER_AGENT: 'fake' } });
+    // A different spelling of the same folder must still find it.
+    const second = await provider.create({
+      repoPath: join(repoPath, '.'),
+      env: { RUNNER_AGENT: 'fake' },
+    });
+
+    expect(second.id).toBe(first.id);
+    await expect(provider.endpoint(second.id)).resolves.toEqual(await provider.endpoint(first.id));
+
+    await provider.destroy(first.id);
+  }, 45_000);
+
   it('rejects a spec the local provider cannot satisfy', async () => {
     const provider = createProvider('local');
     await expect(provider.create({ repoUrl: 'https://example.com/repo.git' })).rejects.toThrow(

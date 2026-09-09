@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   EnvSpecSchema,
@@ -34,6 +34,11 @@ export class LocalProvider implements EnvironmentProvider {
     if (!parsed.repoPath) {
       throw new Error('The local provider needs repoPath; cloning repoUrl is not supported yet');
     }
+
+    // The provider outlives any one browser session, so reopening a folder must
+    // reattach to its runner instead of leaving the old one running unattended.
+    const existing = this.findRunning(parsed.repoPath);
+    if (existing) return existing.handle;
 
     const id = randomUUID();
     const environment: Environment = {
@@ -76,6 +81,16 @@ export class LocalProvider implements EnvironmentProvider {
 
   async status(id: string): Promise<EnvStatus> {
     return this.get(id).handle.status;
+  }
+
+  private findRunning(repoPath: string): Environment | undefined {
+    const wanted = comparablePath(repoPath);
+    return [...this.environments.values()].find(
+      (environment) =>
+        environment.handle.status === 'running' &&
+        environment.spec.repoPath !== undefined &&
+        comparablePath(environment.spec.repoPath) === wanted,
+    );
   }
 
   private async spawnRunner(environment: Environment): Promise<void> {
@@ -140,6 +155,12 @@ export class LocalProvider implements EnvironmentProvider {
     if (!environment) throw new Error(`Unknown environment: ${id}`);
     return environment;
   }
+}
+
+/** Windows paths name the same folder in any case, so compare them case-insensitively. */
+function comparablePath(repoPath: string): string {
+  const absolute = resolve(repoPath);
+  return process.platform === 'win32' ? absolute.toLowerCase() : absolute;
 }
 
 /** Prefer the compiled runner; fall back to running its TypeScript through tsx. */
