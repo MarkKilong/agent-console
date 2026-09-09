@@ -29,6 +29,22 @@ describe('LocalProvider', () => {
     await expect(fetch(`${endpoint.url.replace('ws://', 'http://')}/healthz`)).rejects.toThrow();
   }, 45_000);
 
+  it('fails fast when the runner cannot start, instead of waiting out the health timeout', async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), 'agent-console-local-'));
+    execFileSync('git', ['init', '-q'], { cwd: repoPath });
+
+    const provider = createProvider('local');
+    const started = Date.now();
+    await expect(
+      provider.create({
+        repoPath,
+        env: { RUNNER_AGENT: 'claude', CLAUDE_BINARY: 'C:/definitely/missing/claude.exe' },
+      }),
+    ).rejects.toThrow(/claude/i);
+    // The health timeout is 20s; losing the race to the dying child must be far quicker.
+    expect(Date.now() - started).toBeLessThan(10_000);
+  }, 30_000);
+
   it('rejects a spec the local provider cannot satisfy', async () => {
     const provider = createProvider('local');
     await expect(provider.create({ repoUrl: 'https://example.com/repo.git' })).rejects.toThrow(

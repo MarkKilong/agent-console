@@ -15,6 +15,7 @@ import {
 import type { EnvironmentProvider } from '../EnvironmentProvider.js';
 
 const READY_TIMEOUT_MS = 20_000;
+const STDERR_KEEP = 4_000;
 
 type Environment = {
   handle: EnvHandle;
@@ -81,9 +82,10 @@ export class LocalProvider implements EnvironmentProvider {
     environment.handle.status = 'creating';
     const entry = runnerEntry();
 
-    environment.child = spawn(process.execPath, entry, {
+    const child = spawn(process.execPath, entry, {
       cwd: environment.spec.repoPath,
-      stdio: 'inherit',
+      // stderr is piped so a runner that dies during boot can explain why.
+      stdio: ['ignore', 'inherit', 'pipe'],
       windowsHide: true,
       env: {
         ...process.env,
@@ -93,9 +95,23 @@ export class LocalProvider implements EnvironmentProvider {
         RUNNER_CWD: environment.spec.repoPath,
       },
     });
+    environment.child = child;
+
+    let stderr = '';
+    child.stderr?.setEncoding('utf8');
+    child.stderr?.on('data', (chunk: string) => {
+      stderr = (stderr + chunk).slice(-STDERR_KEEP);
+      process.stderr.write(chunk);
+    });
+
+    const exited = new Promise<never>((_, reject) => {
+      child.once('error', reject);
+      child.once('exit', (code) => reject(new Error(exitReason(stderr, code))));
+    });
 
     try {
-      await waitForHealth(environment.port);
+      // Losing the race to the child means the runner never came up at all.
+      await Promise.race([waitForHealth(environment.port), exited]);
     } catch (error) {
       this.kill(environment);
       environment.handle.status = 'stopped';
@@ -139,6 +155,20 @@ function runnerEntry(): string[] {
   // `--import` needs a file:// URL: a bare Windows path is read as a URL scheme.
   const tsx = pathToFileURL(require.resolve('tsx')).href;
   return ['--import', tsx, join(packageDir, 'src', 'main.ts')];
+}
+
+/**
+ * Node wraps a thrown startup error in a source banner and a version trailer, so the
+ * last lines are noise; the `Error:` line carries the reason worth showing.
+ */
+function exitReason(stderr: string, code: number | null): string {
+  const lines = stderr
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const thrown = lines.find((line) => /^[A-Za-z]*Error(?: \[[^\]]+\])?:/.test(line));
+  if (thrown) return thrown;
+  return lines.slice(-3).join('\n') || `Runner exited with code ${code}`;
 }
 
 function freePort(): Promise<number> {
