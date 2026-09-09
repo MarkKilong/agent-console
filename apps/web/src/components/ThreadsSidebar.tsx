@@ -1,7 +1,8 @@
 'use client';
 
 import { Folder, Search, SquarePen, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { Preflight } from '@/server/preflight';
 import { cn } from '@/lib/cn';
 import { relativeTime } from '@/lib/relativeTime';
 import { threadStatus, type ThreadStatus } from '@/store/threadState';
@@ -214,6 +215,7 @@ function ProjectHeader() {
 
   return (
     <div className="shrink-0 space-y-2 px-3 py-2">
+      <PreflightNotice />
       <input
         value={repoPath}
         onChange={(event) => setRepoPath(event.target.value)}
@@ -234,6 +236,56 @@ function ProjectHeader() {
       {error ? <p className="text-[11px] text-danger">{error}</p> : null}
     </div>
   );
+}
+
+/** Tells the user Claude Code is missing or logged out before they try to open a project. */
+function PreflightNotice() {
+  const [state, setState] = useState<Preflight | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    fetch('/api/preflight')
+      .then((response) => response.json() as Promise<Preflight>)
+      .then((body) => {
+        if (live) setState(body);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (!state || state.agent !== 'claude') return null;
+
+  if (!state.claudeBinary) {
+    return (
+      <div className="space-y-1 rounded-lg border border-line bg-raised p-2 text-[11px]">
+        <p className="text-danger">Claude Code is not installed.</p>
+        <p className="text-muted">Windows:</p>
+        <code className="block break-all text-fg/80">irm https://claude.ai/install.ps1 | iex</code>
+        <p className="text-muted">macOS/Linux:</p>
+        <code className="block break-all text-fg/80">
+          curl -fsSL https://claude.ai/install.sh | bash
+        </code>
+        <p className="text-muted">
+          then run <code className="text-fg/80">claude</code> once to log in
+        </p>
+      </div>
+    );
+  }
+
+  if (state.loggedIn === false) {
+    return (
+      <div className="space-y-1 rounded-lg border border-line bg-raised p-2 text-[11px]">
+        <p className="text-danger">Claude Code is not logged in.</p>
+        <p className="text-muted">
+          Run <code className="text-fg/80">claude</code> in a terminal and complete the login.
+        </p>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function repoName(path: string): string {
