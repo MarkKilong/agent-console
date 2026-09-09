@@ -1,7 +1,8 @@
 import type { AuthLoginMode, AuthStatusData, Event, ThreadSummary } from '@agent-console/contracts';
 import { create } from 'zustand';
 import type { ConnectionStatus, RunnerClient } from '@/lib/runner-client';
-import { emptyThread, foldEvent, type ThreadState } from './thread-state';
+// Aliased rather than relative so the tests' NodeNext resolution finds it too.
+import { emptyThread, foldEvent, type ThreadState } from '@/store/thread-state';
 
 export type EnvironmentInfo = {
   id: string;
@@ -14,6 +15,9 @@ export type EnvironmentInfo = {
 export type ThreadMeta = {
   id: string;
   title: string;
+  agent: string;
+  /** The workspace branch of the thread's latest turn, once one has started. */
+  branch?: string;
   createdAt: number;
 };
 
@@ -92,6 +96,8 @@ export const useConsoleStore = create<ConsoleStore>((set, get) => ({
       const metas = restored.map((thread) => ({
         id: thread.id,
         title: thread.title || 'New thread',
+        agent: thread.agent,
+        branch: thread.branch,
         // The list is ordered by last activity, so that is what the row should show.
         createdAt: thread.updatedAt,
       }));
@@ -112,6 +118,10 @@ export const useConsoleStore = create<ConsoleStore>((set, get) => ({
         ...state.threads,
         [event.threadId]: foldEvent(state.threads[event.threadId] ?? emptyThread(), event),
       },
+      threadMeta:
+        event.type === 'turn_started' && event.branch
+          ? branched(state.threadMeta, event.threadId, event.branch)
+          : state.threadMeta,
     })),
 
   // The prompt itself renders from the runner's `user_message` event, not from here.
@@ -175,7 +185,18 @@ function freshThread() {
 }
 
 function createMeta(): ThreadMeta {
-  return { id: randomId(), title: 'New thread', createdAt: Date.now() };
+  return { id: randomId(), title: 'New thread', agent: 'claude', createdAt: Date.now() };
+}
+
+/** The runner reports the branch on every turn, so a checkout mid-thread shows up. */
+function branched(
+  metas: Record<string, ThreadMeta>,
+  threadId: string,
+  branch: string,
+): Record<string, ThreadMeta> {
+  const meta = metas[threadId];
+  if (!meta || meta.branch === branch) return metas;
+  return { ...metas, [threadId]: { ...meta, branch } };
 }
 
 /** The first prompt names the thread. */

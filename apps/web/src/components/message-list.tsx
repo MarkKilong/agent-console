@@ -28,20 +28,23 @@ export function MessageList({ items, permissions, connected, onAnswer, onShowFil
   }, [items, permissions]);
 
   return (
-    <div ref={scroller} className="min-h-0 flex-1 space-y-3 overflow-auto px-4 py-4">
-      {items.length === 0 ? (
-        <EmptyState>
-          {connected ? 'Send a prompt to start a turn.' : 'Open a repository to start chatting.'}
-        </EmptyState>
-      ) : null}
+    <div ref={scroller} className="min-h-0 flex-1 overflow-auto px-4 py-4">
+      {/* Same column width as the composer below it. */}
+      <div className="mx-auto max-w-3xl space-y-3">
+        {items.length === 0 ? (
+          <EmptyState>
+            {connected ? 'Send a prompt to start a turn.' : 'Open a repository to start chatting.'}
+          </EmptyState>
+        ) : null}
 
-      {items.map((item) => (
-        <Message key={item.id} item={item} onShowFiles={onShowFiles} />
-      ))}
+        {items.map((item) => (
+          <Message key={item.id} item={item} onShowFiles={onShowFiles} />
+        ))}
 
-      {permissions.map((permission) => (
-        <PermissionCard key={permission.requestId} permission={permission} onAnswer={onAnswer} />
-      ))}
+        {permissions.map((permission) => (
+          <PermissionCard key={permission.requestId} permission={permission} onAnswer={onAnswer} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -65,7 +68,9 @@ function Message({ item, onShowFiles }: { item: ChatItem; onShowFiles(turn: numb
           ) : null}
           <div className="prose-chat leading-relaxed text-fg/85">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
-            {item.streaming ? <span className="ml-0.5 animate-pulse text-muted">▍</span> : null}
+            {item.streaming ? (
+              <span className="ml-0.5 animate-pulse text-muted-foreground">▍</span>
+            ) : null}
           </div>
         </div>
       );
@@ -85,7 +90,7 @@ function Message({ item, onShowFiles }: { item: ChatItem; onShowFiles(turn: numb
             </div>
             <button
               onClick={() => onShowFiles(item.turnIndex)}
-              className="flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-xs text-muted transition-colors hover:bg-white/8 hover:text-fg"
+              className="flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-white/8 hover:text-fg"
             >
               <FileDiff className="size-3" />
               Show files
@@ -100,7 +105,7 @@ function Message({ item, onShowFiles }: { item: ChatItem; onShowFiles(turn: numb
           <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
           <span>
             {item.message}
-            {item.code ? <span className="text-muted"> ({item.code})</span> : null}
+            {item.code ? <span className="text-muted-foreground"> ({item.code})</span> : null}
           </span>
         </div>
       );
@@ -116,14 +121,14 @@ function ThinkingBlock({ text, live }: { text: string; live: boolean }) {
     <div>
       <button
         onClick={() => setOverride(!open)}
-        className="flex min-h-6 cursor-pointer items-center gap-1 rounded-md px-0.5 py-0.5 text-xs text-muted transition-colors hover:bg-white/5"
+        className="flex min-h-6 cursor-pointer items-center gap-1 rounded-md px-0.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-white/5"
       >
         <span className={cn(live && 'animate-pulse')}>Thinking</span>
         {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
       </button>
 
       {open ? (
-        <div className="mt-1 rounded-lg border border-line bg-raised px-2.5 py-2 text-[11px] leading-relaxed whitespace-pre-wrap text-muted">
+        <div className="mt-1 rounded-lg border border-line bg-raised px-2.5 py-2 text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
           {text}
         </div>
       ) : null}

@@ -3,7 +3,7 @@
 import type { PermissionDecision } from '@agent-console/contracts';
 import { Shield } from 'lucide-react';
 import type { PendingPermission } from '@/store/thread-state';
-import { Button } from './ui';
+import { Button } from './ui/button';
 
 export function PermissionCard({
   permission,
@@ -19,7 +19,7 @@ export function PermissionCard({
       <div className="flex items-center gap-1.5 text-warn">
         <Shield className="size-3.5 shrink-0" />
         <span className="font-medium">Permission requested</span>
-        <span className="ml-auto rounded-md bg-white/6 px-1.5 py-0.5 font-mono text-[11px] text-muted">
+        <span className="ml-auto rounded-md bg-white/6 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
           {permission.toolName}
         </span>
       </div>
@@ -30,7 +30,7 @@ export function PermissionCard({
         <div className="mt-2 rounded-md bg-black/30 px-2 py-1.5 font-mono text-[11px]">
           {preview.path ? <div className="truncate text-fg/80">{preview.path}</div> : null}
           {preview.body ? (
-            <pre className="mt-0.5 overflow-hidden whitespace-pre-wrap text-muted">
+            <pre className="mt-0.5 overflow-hidden whitespace-pre-wrap text-muted-foreground">
               {preview.body}
             </pre>
           ) : null}
@@ -38,10 +38,10 @@ export function PermissionCard({
       ) : null}
 
       <div className="mt-3 flex gap-2">
-        <Button variant="primary" onClick={() => onAnswer(permission.requestId, 'allow')}>
+        <Button size="sm" onClick={() => onAnswer(permission.requestId, 'allow')}>
           Allow
         </Button>
-        <Button variant="muted" onClick={() => onAnswer(permission.requestId, 'deny')}>
+        <Button variant="ghost" size="sm" onClick={() => onAnswer(permission.requestId, 'deny')}>
           Deny
         </Button>
       </div>

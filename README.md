@@ -16,13 +16,13 @@ Phase 1 is the backend under `packages/`; phase 2 is the Next.js control plane a
   curl -fsSL https://claude.ai/install.sh | bash  # macOS / Linux
   ```
 
-  Log in either in a terminal (`claude`, then complete the login) or in the app: open a
-  repository and use the **Connect Claude** card in the sidebar, which drives
-  `claude auth login` inside the environment — you approve in the browser and paste the code
-  back. The card also accepts a Console API key instead.
+  Log in either in a terminal (`claude`, then complete the login) or in the app: add a project
+  and use **Connect Claude** in the **Add project** dialog — the sidebar's gear reopens it — which
+  drives `claude auth login` inside the environment; you approve in the browser and paste the code
+  back. It also accepts a Console API key instead.
 
   Without Claude Code, set `RUNNER_AGENT=fake` to drive the scripted adapter; the UI works, the
-  agent is canned. The sidebar says so if Claude Code is missing or logged out.
+  agent is canned.
 
 ### Codex
 
@@ -33,9 +33,8 @@ npm install -g @openai/codex
 codex login
 ```
 
-Pick **Codex** in the sidebar before opening a project and that environment runs the Codex
-adapter; **Claude** is the other choice, and the picker starts on `RUNNER_AGENT`. The sidebar
-shows the same install/login notice for whichever agent is selected.
+Set `RUNNER_AGENT=codex` and every environment the app opens runs the Codex adapter. The UI
+does not offer the choice; it always speaks to whichever agent the runner was configured with.
 
 The adapter drives `codex app-server` over newline-delimited JSON-RPC. Threads run with the
 app-server's `on-request` approval policy inside its `workspace-write` sandbox, so Codex asks
@@ -76,12 +75,12 @@ Ports and adapters, with three moving parts:
 
 ## Packages
 
-| Package              | What it is                                                                                                                                                |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/contracts` | zod schemas and inferred types for commands, events, responses and the environment spec. Exports `PROTOCOL_VERSION`.                                      |
-| `packages/runner`    | The Node service that runs inside an environment: WebSocket + `/healthz`, agent adapters, thread event log, file access, git diff.                        |
-| `packages/providers` | The `EnvironmentProvider` interface and the `local` adapter that spawns the runner as a child process.                                                    |
-| `apps/web`           | Next.js control plane and UI: route handlers that create environments, plus a three-column threads / chat / diff view driven over the runner's WebSocket. |
+| Package              | What it is                                                                                                                                                  |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/contracts` | zod schemas and inferred types for commands, events, responses and the environment spec. Exports `PROTOCOL_VERSION`.                                        |
+| `packages/runner`    | The Node service that runs inside an environment: WebSocket + `/healthz`, agent adapters, thread event log, file access, git diff.                          |
+| `packages/providers` | The `EnvironmentProvider` interface and the `local` adapter that spawns the runner as a child process.                                                      |
+| `apps/web`           | Next.js control plane and UI: route handlers that create environments, plus a three-column projects / chat / diff shell driven over the runner's WebSocket. |
 
 ## Protocol
 
@@ -204,9 +203,11 @@ To run the UI on a machine without Claude, copy `apps/web/.env.example` to
 The dev and build scripts compile `packages/*` first: the app imports the workspace packages
 from their `dist/`, and the provider prefers the runner's compiled `dist/main.js` when spawning.
 
-Paste a repository path into the sidebar and press **Open**. That posts to
-`POST /api/environments`, which returns `{id, url, token}`; the browser then opens a WebSocket to
-the runner and drives it directly — the Next.js server is not in the message path.
+**Add project** takes a folder on this machine. Projects live in `localStorage`, so the list —
+plus the composer's model/effort/access pickers and which side panels are open — survives a
+reload. Selecting a project posts to `POST /api/environments`, which returns `{id, url, token}`;
+the browser then opens a WebSocket to the runner and drives it directly — the Next.js server is
+not in the message path. Switching projects destroys the previous environment first.
 
 | Route                          | Does                                                                                                                                                            |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |

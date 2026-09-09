@@ -5,7 +5,10 @@ import { ExternalLink } from 'lucide-react';
 import { useState } from 'react';
 import type { RunnerClient } from '@/lib/runner-client';
 import { useConsoleStore } from '@/store/use-console-store';
-import { Button } from './ui';
+import { Dot } from './ui';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 
 type Tab = AuthLoginMode | 'apikey';
 
@@ -14,9 +17,6 @@ const TAB_LABELS: Record<Tab, string> = {
   console: 'Console',
   apikey: 'API key',
 };
-
-const FIELD =
-  'h-7 min-w-0 flex-1 rounded-lg border border-line bg-panel px-2 placeholder:text-muted focus:border-accent focus:outline-none';
 
 /**
  * Logs Claude Code in inside the environment. The runner runs `claude auth login` and
@@ -35,8 +35,15 @@ export function ConnectClaudeCard({ client }: { client: RunnerClient | null }) {
   // The actions never change identity, so there is nothing to subscribe to.
   const store = useConsoleStore.getState();
 
+  if (!client || !status) {
+    return <p className="text-xs text-muted-foreground">Checking the environment…</p>;
+  }
   // `authMethod: 'none'` while logged in means this environment has no Claude to connect.
-  if (!client || !status || (status.loggedIn && status.authMethod === 'none')) return null;
+  if (status.loggedIn && status.authMethod === 'none') {
+    return (
+      <p className="text-xs text-muted-foreground">This environment has no Claude to log in.</p>
+    );
+  }
 
   const run = (action: (client: RunnerClient) => Promise<void>) => {
     setBusy(true);
@@ -53,108 +60,108 @@ export function ConnectClaudeCard({ client }: { client: RunnerClient | null }) {
     });
 
   return (
-    <div className="mx-2 mb-2 shrink-0 space-y-2 rounded-lg border border-line bg-raised p-2 text-[11px]">
+    <div className="space-y-3 text-xs">
       {status.loggedIn ? (
         <div className="flex items-center gap-2">
+          <Dot status="open" />
           <span className="min-w-0 flex-1 truncate text-fg">
             {`Connected${status.email ? ` · ${status.email}` : ''} · ${
               status.subscriptionType ?? 'Console'
             }`}
           </span>
-          <Button disabled={busy} onClick={() => run(store.logout)}>
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => run(store.logout)}>
             Disconnect
           </Button>
         </div>
       ) : (
-        <>
-          <p className="font-medium text-fg">Connect Claude</p>
-
-          <div className="flex gap-1" role="group" aria-label="Connection method">
+        <Tabs
+          value={tab}
+          onValueChange={(value) => {
+            setTab(value as Tab);
+            setError(null);
+          }}
+        >
+          <TabsList className="w-full">
             {(Object.keys(TAB_LABELS) as Tab[]).map((candidate) => (
-              <Button
-                key={candidate}
-                variant={candidate === tab ? 'primary' : 'ghost'}
-                className="flex-1 px-1"
-                aria-pressed={candidate === tab}
-                onClick={() => {
-                  setTab(candidate);
-                  setError(null);
-                }}
-              >
+              <TabsTrigger key={candidate} value={candidate}>
                 {TAB_LABELS[candidate]}
-              </Button>
+              </TabsTrigger>
             ))}
-          </div>
+          </TabsList>
 
-          {tab === 'apikey' ? (
-            <div className="flex gap-1">
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(event) => setApiKey(event.target.value)}
-                placeholder="sk-ant-…"
-                aria-label="Anthropic API key"
-                className={FIELD}
-              />
-              <Button
-                variant="primary"
-                disabled={busy || !apiKey.trim()}
-                onClick={() =>
-                  run(async (target) => {
-                    await store.setApiKey(target, apiKey.trim());
-                    setApiKey('');
-                  })
-                }
-              >
-                Save
-              </Button>
-            </div>
-          ) : login?.mode === tab ? (
-            <div className="space-y-1.5">
-              <p className="text-muted">1. Open Claude and approve</p>
-              <a
-                href={login.authUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center justify-center gap-1.5 rounded-lg bg-accent px-2.5 py-1 font-medium text-white hover:brightness-110"
-              >
-                <ExternalLink className="size-3" />
-                Open Claude
-              </a>
-              <p className="text-muted">2. Paste the code</p>
-              <div className="flex gap-1">
-                <input
-                  value={code}
-                  onChange={(event) => setCode(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && code.trim() && !busy) submit();
-                  }}
-                  placeholder="Code"
-                  aria-label="Authorization code"
-                  className={FIELD}
-                />
-                <Button variant="primary" disabled={busy || !code.trim()} onClick={submit}>
-                  Submit
-                </Button>
-              </div>
-            </div>
-          ) : (
+          <TabsContent value="apikey" className="flex gap-1.5">
+            <Input
+              type="password"
+              value={apiKey}
+              onChange={(event) => setApiKey(event.target.value)}
+              placeholder="sk-ant-…"
+              aria-label="Anthropic API key"
+            />
             <Button
-              variant="primary"
-              className="w-full"
-              disabled={busy}
-              onClick={() => run((target) => store.startLogin(target, tab))}
+              size="sm"
+              disabled={busy || !apiKey.trim()}
+              onClick={() =>
+                run(async (target) => {
+                  await store.setApiKey(target, apiKey.trim());
+                  setApiKey('');
+                })
+              }
             >
-              {busy ? 'Starting…' : 'Connect'}
+              Save
             </Button>
-          )}
-        </>
+          </TabsContent>
+
+          {(['claudeai', 'console'] as AuthLoginMode[]).map((mode) => (
+            <TabsContent key={mode} value={mode} className="space-y-2">
+              {login?.mode === mode ? (
+                <>
+                  <p className="text-muted-foreground">1. Open Claude and approve</p>
+                  <Button asChild size="sm" className="w-full">
+                    <a href={login.authUrl} target="_blank" rel="noreferrer">
+                      <ExternalLink />
+                      Open Claude
+                    </a>
+                  </Button>
+                  <p className="text-muted-foreground">2. Paste the code</p>
+                  <div className="flex gap-1.5">
+                    <Input
+                      value={code}
+                      onChange={(event) => setCode(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' && code.trim() && !busy) submit();
+                      }}
+                      placeholder="Code"
+                      aria-label="Authorization code"
+                    />
+                    <Button size="sm" disabled={busy || !code.trim()} onClick={submit}>
+                      Submit
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <Button
+                  size="sm"
+                  className="w-full"
+                  disabled={busy}
+                  onClick={() => run((target) => store.startLogin(target, mode))}
+                >
+                  {busy ? 'Starting…' : 'Connect'}
+                </Button>
+              )}
+            </TabsContent>
+          ))}
+        </Tabs>
       )}
 
       {status.apiKey ? (
         <div className="flex items-center gap-2 border-t border-line pt-2">
-          <span className="min-w-0 flex-1 text-muted">API key set</span>
-          <Button disabled={busy} onClick={() => run(store.clearApiKey)}>
+          <span className="min-w-0 flex-1 text-muted-foreground">API key set</span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => run(store.clearApiKey)}
+          >
             Clear
           </Button>
         </div>

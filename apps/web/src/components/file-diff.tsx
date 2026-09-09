@@ -16,8 +16,8 @@ type Row =
 const STATUS_COLORS: Record<DiffStatus, string> = {
   added: 'text-success',
   deleted: 'text-danger',
-  modified: 'text-muted',
-  renamed: 'text-muted',
+  modified: 'text-muted-foreground',
+  renamed: 'text-muted-foreground',
 };
 
 export function FileDiff({
@@ -55,10 +55,10 @@ export function FileDiff({
           ) : (
             <ChevronRight className={cn('size-4 shrink-0', STATUS_COLORS[file.status])} />
           )}
-          <FileText className="size-4 shrink-0 text-muted" strokeWidth={1.8} />
+          <FileText className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.8} />
           <span className="min-w-0 truncate">
-            {file.oldPath ? <span className="text-muted">{file.oldPath} → </span> : null}
-            <span className="text-muted">{file.path.slice(0, slash + 1)}</span>
+            {file.oldPath ? <span className="text-muted-foreground">{file.oldPath} → </span> : null}
+            <span className="text-muted-foreground">{file.path.slice(0, slash + 1)}</span>
             <span className="text-fg">{file.path.slice(slash + 1)}</span>
           </span>
         </button>
@@ -90,7 +90,7 @@ export function FileDiff({
 /** Centred label between two hairlines, as T3 renders its hunk separators. */
 function Separator({ children }: { children: ReactNode }) {
   return (
-    <div className="flex h-6 items-center gap-2 px-3 font-sans text-[11px] text-muted/70 select-none">
+    <div className="flex h-6 items-center gap-2 px-3 font-sans text-[11px] text-muted-foreground/70 select-none">
       <span className="h-px flex-1 bg-line" />
       <span className="shrink-0 truncate">{children}</span>
       <span className="h-px flex-1 bg-line" />
@@ -114,7 +114,7 @@ const GUTTER_STYLES = {
 const MARKER_STYLES = {
   add: 'text-success',
   remove: 'text-danger',
-  context: 'text-muted',
+  context: 'text-muted-foreground',
 } as const;
 
 function LineRow({ line, tokens }: { line: DiffLine; tokens: Token[] | undefined }) {
@@ -146,7 +146,7 @@ function Gutter({ value, className }: { value: number | undefined; className: st
   return (
     <span
       className={cn(
-        'w-10 shrink-0 pr-2 text-right tabular-nums text-muted/60 select-none',
+        'w-10 shrink-0 pr-2 text-right tabular-nums text-muted-foreground/60 select-none',
         className,
       )}
     >
@@ -167,7 +167,7 @@ function CopyPathButton({ path }: { path: string }) {
       onMouseLeave={() => setCopied(false)}
       aria-label="Copy file path"
       title={copied ? 'Copied' : 'Copy path'}
-      className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted hover:text-fg"
+      className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground hover:text-fg"
     >
       {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
     </button>

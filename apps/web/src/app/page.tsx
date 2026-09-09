@@ -1,5 +1,5 @@
-import { Console } from '@/components/console';
+import { AppShell } from '@/components/app-shell';
 
 export default function Page() {
-  return <Console />;
+  return <AppShell />;
 }

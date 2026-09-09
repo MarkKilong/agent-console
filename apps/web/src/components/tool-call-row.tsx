@@ -44,22 +44,28 @@ export function ToolCallRow({ item }: { item: ToolItem }) {
         <span className="flex size-6 shrink-0 items-center justify-center">
           {item.done ? (
             <Icon
-              className={cn('size-4 shrink-0', item.isError ? 'text-danger' : 'text-muted')}
+              className={cn(
+                'size-4 shrink-0',
+                item.isError ? 'text-danger' : 'text-muted-foreground',
+              )}
               strokeWidth={1.8}
             />
           ) : (
-            <Spinner className="text-muted" />
+            <Spinner className="text-muted-foreground" />
           )}
         </span>
         <span
-          className={cn('min-w-0 flex-1 truncate', item.isError ? 'text-danger' : 'text-muted')}
+          className={cn(
+            'min-w-0 flex-1 truncate',
+            item.isError ? 'text-danger' : 'text-muted-foreground',
+          )}
         >
           {toolLabel(item.name, item.input)}
         </span>
         {open ? (
-          <ChevronDown className="size-3.5 shrink-0 text-muted" />
+          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
         ) : (
-          <ChevronRight className="size-3.5 shrink-0 text-muted" />
+          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
         )}
       </button>
 
@@ -76,7 +82,9 @@ export function ToolCallRow({ item }: { item: ToolItem }) {
 function Section({ label, children }: { label: string; children: string }) {
   return (
     <div>
-      <div className="mb-0.5 text-[10px] tracking-wide text-muted uppercase">{label}</div>
+      <div className="mb-0.5 text-[10px] tracking-wide text-muted-foreground uppercase">
+        {label}
+      </div>
       <pre className="max-h-64 overflow-auto text-[11px] break-all whitespace-pre-wrap text-fg">
         {children}
       </pre>

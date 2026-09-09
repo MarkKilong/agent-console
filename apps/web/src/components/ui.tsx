@@ -4,33 +4,6 @@ import { LoaderCircle } from 'lucide-react';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 
-type ButtonVariant = 'primary' | 'ghost' | 'muted' | 'danger';
-
-const VARIANTS: Record<ButtonVariant, string> = {
-  primary: 'bg-accent text-white hover:brightness-110',
-  ghost: 'border border-line bg-raised text-fg hover:border-muted',
-  muted: 'text-muted hover:bg-white/8 hover:text-fg',
-  danger: 'border border-line bg-raised text-danger hover:border-danger',
-};
-
-export function Button({
-  variant = 'ghost',
-  className,
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant }) {
-  return (
-    <button
-      {...props}
-      className={cn(
-        'rounded-lg px-2.5 py-1 text-xs font-medium transition-colors',
-        'disabled:cursor-not-allowed disabled:opacity-40',
-        VARIANTS[variant],
-        className,
-      )}
-    />
-  );
-}
-
 /** Square ghost icon button, T3's `size="icon-sm" variant="ghost"`. */
 export function IconButton({
   className,
@@ -40,7 +13,7 @@ export function IconButton({
     <button
       {...props}
       className={cn(
-        'flex size-7 shrink-0 items-center justify-center rounded-lg text-muted transition-colors',
+        'flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors',
         'hover:bg-white/8 hover:text-fg disabled:cursor-not-allowed disabled:opacity-40',
         className,
       )}
@@ -50,14 +23,14 @@ export function IconButton({
 
 export function PaneHeader({ children }: { children: ReactNode }) {
   return (
-    <div className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3 text-xs text-muted">
+    <div className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3 text-xs text-muted-foreground">
       {children}
     </div>
   );
 }
 
 export function EmptyState({ children }: { children: ReactNode }) {
-  return <div className="px-5 py-6 text-center text-xs text-muted/70">{children}</div>;
+  return <div className="px-5 py-6 text-center text-xs text-muted-foreground/70">{children}</div>;
 }
 
 /** `+A −D` in the diff green/red, as T3's DiffStatLabel renders it. */
@@ -85,7 +58,7 @@ export function Spinner({ className }: { className?: string }) {
 }
 
 const STATUS_COLORS = {
-  idle: 'bg-muted/50',
+  idle: 'bg-muted-foreground/50',
   working: 'bg-sky-400/90',
   'needs-permission': 'bg-amber-300/90',
   open: 'bg-success',
