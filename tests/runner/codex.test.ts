@@ -134,6 +134,18 @@ describe('CodexAgentAdapter', () => {
     expect(result.sessionId).not.toBe('codex-thread-gone');
   });
 
+  it('kills the app-server on close', async () => {
+    const adapter = makeAdapter();
+    const { events, callbacks } = recorder();
+
+    const turn = adapter.startTurn({ threadId: 't1', prompt: 'hang around', cwd: CWD }, callbacks);
+    await waitFor(() => events.length > 0);
+    adapter.close();
+
+    // Only the child's own exit event fails a running turn this way.
+    await expect(turn).rejects.toThrow(/exited/);
+  });
+
   it('interrupts a running turn on stop', async () => {
     const adapter = makeAdapter();
     const { events, callbacks } = recorder();

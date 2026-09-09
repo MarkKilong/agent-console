@@ -32,4 +32,6 @@ export type TurnResult = {
 export interface AgentAdapter {
   startTurn(params: StartTurnParams, callbacks: TurnCallbacks): Promise<TurnResult>;
   stop(threadId: string): void;
+  /** Releases whatever the adapter holds (a subprocess, say) when the runner shuts down. */
+  close?(): Promise<void> | void;
 }

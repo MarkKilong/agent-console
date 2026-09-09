@@ -21,6 +21,8 @@ export function startTurn(deps: TurnDeps, threadId: string, prompt: string): voi
     return;
   }
 
+  // Logged here rather than on the command so a refused prompt leaves no trace.
+  deps.registry.append(threadId, { type: 'user_message', text: prompt });
   const turn = new Turn(deps, threadId);
   deps.registry.setActiveTurn(threadId, turn);
   void turn.run(prompt);
@@ -30,6 +32,10 @@ class Turn implements ActiveTurn {
   private readonly pending = new Map<string, (decision: PermissionDecision) => void>();
   /** Working tree as it looked when the turn started; the diff is measured against it. */
   private baseTree: string | undefined;
+  /** Set by stop(); a stop landing before the adapter starts must not be lost. */
+  private stopped = false;
+  /** The adapter only knows about the turn once startTurn has been called. */
+  private adapterStarted = false;
 
   constructor(
     private readonly deps: TurnDeps,
@@ -43,6 +49,11 @@ class Turn implements ActiveTurn {
     registry.setBaseTree(this.threadId, this.baseTree);
 
     try {
+      if (this.stopped) {
+        registry.append(this.threadId, { type: 'turn_finished', stopReason: 'stopped' });
+        return;
+      }
+      this.adapterStarted = true;
       const result = await adapter.startTurn(
         {
           threadId: this.threadId,
@@ -78,7 +89,8 @@ class Turn implements ActiveTurn {
   }
 
   stop(): void {
-    this.deps.adapter.stop(this.threadId);
+    this.stopped = true;
+    if (this.adapterStarted) this.deps.adapter.stop(this.threadId);
     this.denyPending();
   }
 

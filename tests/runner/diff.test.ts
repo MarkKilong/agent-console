@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { diffTrees, parseDiff, snapshotTree } from '../../packages/runner/src/git/diff.js';
 
 const FIXTURE = [
@@ -143,6 +143,13 @@ describe('snapshotTree and diffTrees', () => {
 
   it('returns nothing outside a git repository', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agent-console-plain-'));
-    await expect(snapshotTree(root)).resolves.toBeUndefined();
+    // The temp dir may itself sit inside someone's repository (a versioned home
+    // directory); the ceiling keeps git's search below it.
+    vi.stubEnv('GIT_CEILING_DIRECTORIES', tmpdir());
+    try {
+      await expect(snapshotTree(root)).resolves.toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
