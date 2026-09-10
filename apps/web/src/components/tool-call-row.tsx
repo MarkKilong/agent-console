@@ -16,9 +16,14 @@ import {
 import { useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { formatDuration } from '@/lib/format';
+import { toRepoRelative } from '@/lib/repo-path';
 import { toolLabel } from '@/lib/tool-label';
 import { countNodes, type ToolItem, type ToolNode } from '@/lib/turn-groups';
 import { useNow } from '@/lib/use-now';
+import type { Turn } from '@/store/thread-state';
+import { useConsoleStore } from '@/store/use-console-store';
+import { useLayoutStore } from '@/store/use-layout-store';
+import { usePanelStore } from '@/store/use-panel-store';
 import { MiniDiff } from './mini-diff';
 import { CopyButton, Spinner } from './ui';
 
@@ -38,56 +43,102 @@ const ICONS: Record<string, LucideIcon> = {
   TodoWrite: ListTodo,
 };
 
-export function ToolCallRow({ node }: { node: ToolNode }) {
+/** The tools whose label opens the file it touched in the right panel. */
+const LINKED = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Read']);
+
+export function ToolCallRow({ node, turn }: { node: ToolNode; turn: Turn | undefined }) {
   const [open, setOpen] = useState(false);
   const { item, children } = node;
+  const repoPath = useConsoleStore((state) => state.environment?.repoPath);
+  const openTab = useLayoutStore((state) => state.openTab);
   const Icon = ICONS[item.name] ?? Wrench;
   const now = useNow(!item.done);
   // Threads logged before tools were timed have no `finishedAt`, so they show no time at all.
   const elapsed = item.done ? item.finishedAt && item.finishedAt - item.ts : now - item.ts;
   const nested = countNodes(children);
 
+  const absolute = filePath(item.input);
+  // A path the runner does not own stays as it is; the panel will just find nothing.
+  const path = absolute ? (toRepoRelative(absolute, repoPath) ?? absolute) : null;
+  const linked = path && LINKED.has(item.name) ? path : null;
+  const tone = item.isError ? 'text-danger' : 'text-muted-foreground';
+
+  function openInPanel(file: string) {
+    const { openFile, showDiffForFile } = usePanelStore.getState();
+    if (item.name === 'Read') {
+      openTab('files');
+      openFile(file);
+      return;
+    }
+    openTab('diff');
+    // The frozen turn diff is the honest one; without it, fall back to the working tree.
+    const inTurn = turn?.files.some((candidate) => candidate.path === file) ? turn.index : null;
+    showDiffForFile(file, inTurn);
+  }
+
+  const icon = (
+    <span className="flex size-6 shrink-0 items-center justify-center">
+      <Icon className={cn('size-4 shrink-0', tone)} strokeWidth={1.8} />
+    </span>
+  );
+
+  const meta = (
+    <>
+      {nested > 0 && !open ? (
+        <span className="shrink-0 text-xs text-muted-foreground/70">
+          · {nested} call{nested === 1 ? '' : 's'}
+        </span>
+      ) : null}
+      {item.done ? null : <Spinner className="text-muted-foreground" />}
+      {elapsed === undefined ? null : (
+        <span className="shrink-0 font-mono text-[11px] text-muted-foreground/70 tabular-nums">
+          {formatDuration(elapsed)}
+        </span>
+      )}
+      {open ? (
+        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+      ) : (
+        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+      )}
+    </>
+  );
+
   return (
     <div>
-      <button
-        onClick={() => setOpen((value) => !value)}
-        className="flex min-h-6 w-full cursor-pointer items-center gap-1.5 rounded-md px-0.5 py-0.5 text-left transition-colors hover:bg-white/5"
-      >
-        <span className="flex size-6 shrink-0 items-center justify-center">
-          <Icon
-            className={cn(
-              'size-4 shrink-0',
-              item.isError ? 'text-danger' : 'text-muted-foreground',
-            )}
-            strokeWidth={1.8}
-          />
-        </span>
-        <span
-          className={cn(
-            'min-w-0 flex-1 truncate',
-            item.isError ? 'text-danger' : 'text-muted-foreground',
-          )}
-        >
-          {toolLabel(item.name, item.input)}
-        </span>
-
-        {nested > 0 && !open ? (
-          <span className="shrink-0 text-xs text-muted-foreground/70">
-            · {nested} call{nested === 1 ? '' : 's'}
-          </span>
-        ) : null}
-        {item.done ? null : <Spinner className="text-muted-foreground" />}
-        {elapsed === undefined ? null : (
-          <span className="shrink-0 font-mono text-[11px] text-muted-foreground/70 tabular-nums">
-            {formatDuration(elapsed)}
-          </span>
-        )}
-        {open ? (
-          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+      <div className="flex min-h-6 items-center gap-1.5 rounded-md px-0.5 py-0.5 transition-colors hover:bg-white/5">
+        {linked ? (
+          <>
+            <button
+              onClick={() => openInPanel(linked)}
+              title={`Open ${linked}`}
+              className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+            >
+              {icon}
+              <span className={cn('min-w-0 truncate underline-offset-4 hover:underline', tone)}>
+                {toolLabel(item.name, item.input)}
+              </span>
+            </button>
+            <button
+              onClick={() => setOpen((value) => !value)}
+              aria-label={open ? 'Hide the tool call' : 'Show the tool call'}
+              className="flex shrink-0 cursor-pointer items-center gap-1.5"
+            >
+              {meta}
+            </button>
+          </>
         ) : (
-          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+          <button
+            onClick={() => setOpen((value) => !value)}
+            className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+          >
+            {icon}
+            <span className={cn('min-w-0 flex-1 truncate', tone)}>
+              {toolLabel(item.name, item.input)}
+            </span>
+            {meta}
+          </button>
         )}
-      </button>
+      </div>
 
       {open ? (
         <div className="mt-1 ml-6 space-y-2">
@@ -99,7 +150,7 @@ export function ToolCallRow({ node }: { node: ToolNode }) {
           {children.length > 0 ? (
             <div className="space-y-1 border-l border-line pl-3">
               {children.map((child) => (
-                <ToolCallRow key={child.item.id} node={child} />
+                <ToolCallRow key={child.item.id} node={child} turn={turn} />
               ))}
             </div>
           ) : null}
@@ -107,6 +158,11 @@ export function ToolCallRow({ node }: { node: ToolNode }) {
       ) : null}
     </div>
   );
+}
+
+function filePath(input: unknown): string | undefined {
+  const fields = (input ?? {}) as Record<string, unknown>;
+  return string(fields.file_path ?? fields.path ?? fields.notebook_path);
 }
 
 function ToolInput({ item }: { item: ToolItem }) {

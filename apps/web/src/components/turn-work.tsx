@@ -64,7 +64,7 @@ export function TurnWork({ rows, turn, active, stopping }: Props) {
         <div className="mt-1 space-y-1.5">
           {rows.map((row) =>
             row.kind === 'tool' ? (
-              <ToolCallRow key={row.node.item.id} node={row.node} />
+              <ToolCallRow key={row.node.item.id} node={row.node} turn={turn} />
             ) : row.item.kind === 'assistant' ? (
               <AssistantMessage key={row.item.id} item={row.item} />
             ) : null,
