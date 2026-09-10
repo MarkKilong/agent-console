@@ -44,6 +44,8 @@ export class RunnerClient {
   private disposed = false;
   private readonly pending = new Map<string, Pending>();
   private readonly cursors = new Map<string, number>();
+  /** Requests made before the socket is open; sent in order once it is. */
+  private readonly queued: Command[] = [];
 
   constructor(private readonly options: RunnerClientOptions) {}
 
@@ -60,6 +62,7 @@ export class RunnerClient {
       for (const [threadId, afterSeq] of this.cursors) {
         this.send({ type: 'subscribe', threadId, afterSeq });
       }
+      for (const command of this.queued.splice(0)) this.send(command);
     };
     socket.onmessage = (message) => this.handleMessage(message.data);
     socket.onclose = () => {
@@ -76,6 +79,7 @@ export class RunnerClient {
   dispose(): void {
     this.disposed = true;
     clearTimeout(this.reconnectTimer);
+    this.queued.length = 0;
     this.failPending(new Error('Client disposed'));
     this.socket?.close();
     this.socket = undefined;
@@ -116,13 +120,11 @@ export class RunnerClient {
         },
       });
 
-      try {
-        this.send({ ...command, requestId } as Command);
-      } catch (error) {
-        clearTimeout(timer);
-        this.pending.delete(requestId);
-        reject(error instanceof Error ? error : new Error(String(error)));
-      }
+      // A request while (re)connecting waits for the socket rather than failing; the
+      // timeout above still bounds the wait.
+      const full = { ...command, requestId } as Command;
+      if (this.isOpen()) this.send(full);
+      else this.queued.push(full);
     });
   }
 
@@ -160,9 +162,16 @@ export class RunnerClient {
     return this.socket?.readyState === WebSocket.OPEN;
   }
 
+  /** Rejects in-flight requests; queued ones stay for the next connection. */
   private failPending(error: Error): void {
-    for (const pending of [...this.pending.values()]) pending.reject(error);
-    this.pending.clear();
+    const waiting = new Set(
+      this.queued.map((command) => 'requestId' in command && command.requestId),
+    );
+    for (const [requestId, pending] of [...this.pending]) {
+      if (waiting.has(requestId)) continue;
+      this.pending.delete(requestId);
+      pending.reject(error);
+    }
   }
 
   private scheduleReconnect(): void {
