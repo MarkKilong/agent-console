@@ -1,5 +1,6 @@
 import type { Event, EventBody, PermissionDecision, ThreadSummary } from '@agent-console/contracts';
 import type { AgentKind } from './config.js';
+import type { Snapshot } from './git/workspace.js';
 import { MemoryThreadStore, type ThreadMeta, type ThreadStore } from './thread-store.js';
 
 export type EventListener = (event: Event) => void;
@@ -17,7 +18,7 @@ type ThreadState = {
   listeners: Set<EventListener>;
   meta: ThreadMeta;
   turn?: ActiveTurn;
-  baseTree?: string;
+  baseSnapshot?: Snapshot;
 };
 
 /** Event log per thread, mirrored to a store. One active turn at a time. */
@@ -114,15 +115,15 @@ export class ThreadRegistry {
   }
 
   /**
-   * Tree snapshot taken when the thread's latest turn started; the anchor for its diff.
+   * Snapshot taken when the thread's latest turn started; the anchor for its diff.
    * Deliberately not persisted: a git object id only means something within one run.
    */
-  baseTree(threadId: string): string | undefined {
-    return this.thread(threadId).baseTree;
+  baseSnapshot(threadId: string): Snapshot | undefined {
+    return this.thread(threadId).baseSnapshot;
   }
 
-  setBaseTree(threadId: string, tree: string | undefined): void {
-    this.thread(threadId).baseTree = tree;
+  setBaseSnapshot(threadId: string, snapshot: Snapshot | undefined): void {
+    this.thread(threadId).baseSnapshot = snapshot;
   }
 
   /** Aborts every running turn, so no agent subprocess outlives the runner. */

@@ -2,8 +2,13 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
-import { diffTrees, parseDiff, snapshotTree } from '../../packages/runner/src/git/diff.js';
+import { describe, expect, it } from 'vitest';
+import {
+  diffTrees,
+  parseDiff,
+  snapshotTree,
+  type Scope,
+} from '../../packages/runner/src/git/diff.js';
 
 const FIXTURE = [
   'diff --git a/src/added.ts b/src/added.ts',
@@ -80,10 +85,13 @@ async function makeRepo(): Promise<string> {
   return root;
 }
 
+/** The whole repository, as discovery scopes a repository rooted at the workspace. */
+const scope = (cwd: string): Scope => ({ cwd, pathspec: ['.'] });
+
 describe('snapshotTree and diffTrees', () => {
   it('reports only what changed between two snapshots', async () => {
     const root = await makeRepo();
-    const before = await snapshotTree(root);
+    const before = await snapshotTree(scope(root));
 
     await writeFile(join(root, 'keep.txt'), 'one\r\ntwo changed\r\nthree\r\n');
     await writeFile(join(root, 'new.txt'), 'no trailing newline');
@@ -91,8 +99,8 @@ describe('snapshotTree and diffTrees', () => {
     await rename(join(root, 'old-name.txt'), join(root, 'new-name.txt'));
     await writeFile(join(root, 'logo.bin'), Buffer.concat([BINARY, BINARY]));
 
-    const after = await snapshotTree(root);
-    const files = await diffTrees(root, before!, after!);
+    const after = await snapshotTree(scope(root));
+    const files = await diffTrees(scope(root), before, after);
 
     // earlier.txt existed before the snapshot, so it is not part of this diff.
     expect(files.map((file) => [file.path, file.status])).toEqual([
@@ -119,11 +127,11 @@ describe('snapshotTree and diffTrees', () => {
 
   it('sees an unchanged tree as no diff at all', async () => {
     const root = await makeRepo();
-    const before = await snapshotTree(root);
-    const after = await snapshotTree(root);
+    const before = await snapshotTree(scope(root));
+    const after = await snapshotTree(scope(root));
 
     expect(after).toBe(before);
-    await expect(diffTrees(root, before!, after!)).resolves.toEqual([]);
+    await expect(diffTrees(scope(root), before, after)).resolves.toEqual([]);
   });
 
   it('leaves the index and HEAD alone', async () => {
@@ -132,24 +140,12 @@ describe('snapshotTree and diffTrees', () => {
     const head = () => execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root }).toString();
     const before = { status: status(), head: head() };
 
-    await snapshotTree(root);
+    await snapshotTree(scope(root));
 
     expect(status()).toBe(before.status);
     expect(head()).toBe(before.head);
     expect(execFileSync('git', ['diff', '--cached', '--name-only'], { cwd: root }).toString()).toBe(
       '',
     );
-  });
-
-  it('returns nothing outside a git repository', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'agent-console-plain-'));
-    // The temp dir may itself sit inside someone's repository (a versioned home
-    // directory); the ceiling keeps git's search below it.
-    vi.stubEnv('GIT_CEILING_DIRECTORIES', tmpdir());
-    try {
-      await expect(snapshotTree(root)).resolves.toBeUndefined();
-    } finally {
-      vi.unstubAllEnvs();
-    }
   });
 });

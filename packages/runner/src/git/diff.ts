@@ -2,19 +2,34 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DiffFile, DiffStatus } from '@agent-console/contracts';
-import { git, isGitRepo } from './exec.js';
+import { git } from './exec.js';
+
+/** The slice of one repository that git commands are confined to. */
+export type Scope = {
+  /** Where git runs: the repository root, or the workspace when the repository encloses it. */
+  cwd: string;
+  /** Pathspecs keeping git inside the workspace: `.` plus exclusions for nested repositories. */
+  pathspec: string[];
+};
 
 /** Working tree vs HEAD (staged and unstaged), plus untracked files as additions. */
-export async function collectDiff(cwd: string): Promise<DiffFile[]> {
-  if (!(await isGitRepo(cwd))) return [];
-
+export async function collectDiff({ cwd, pathspec }: Scope): Promise<DiffFile[]> {
   const files: DiffFile[] = [];
 
   const hasHead = (await git(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD'])).code === 0;
-  const tracked = await git(cwd, ['diff', '--no-color', ...(hasHead ? ['HEAD'] : [])]);
+  const tracked = await git(cwd, [
+    'diff',
+    '--no-color',
+    '--relative',
+    ...(hasHead ? ['HEAD'] : []),
+    '--',
+    ...pathspec,
+  ]);
   files.push(...parseDiff(tracked.stdout));
 
-  const untracked = (await git(cwd, ['ls-files', '--others', '--exclude-standard'])).stdout
+  const untracked = (
+    await git(cwd, ['ls-files', '--others', '--exclude-standard', '--', ...pathspec])
+  ).stdout
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
@@ -31,17 +46,16 @@ export async function collectDiff(cwd: string): Promise<DiffFile[]> {
 }
 
 /**
- * Hashes the whole working tree — untracked files included, .gitignore respected —
+ * Hashes the scoped working tree — untracked files included, .gitignore respected —
  * into a tree object, using a throwaway index so the repository's own index and
- * HEAD are untouched. Returns undefined outside a git repository.
+ * HEAD are untouched. The pathspec is what stops a workspace nested inside a larger
+ * checkout from staging that whole checkout.
  */
-export async function snapshotTree(cwd: string): Promise<string | undefined> {
-  if (!(await isGitRepo(cwd))) return undefined;
-
+export async function snapshotTree({ cwd, pathspec }: Scope): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'agent-console-index-'));
   const env = { GIT_INDEX_FILE: join(dir, 'index') };
   try {
-    const added = await git(cwd, ['add', '-A'], env);
+    const added = await git(cwd, ['add', '-A', '--', ...pathspec], env);
     if (added.code !== 0) throw new Error(`git add failed: ${added.stderr.trim()}`);
     const tree = await git(cwd, ['write-tree'], env);
     if (tree.code !== 0) throw new Error(`git write-tree failed: ${tree.stderr.trim()}`);
@@ -52,11 +66,26 @@ export async function snapshotTree(cwd: string): Promise<string | undefined> {
 }
 
 /**
- * The patch between two snapshots. Tree-to-tree diffs read blobs that were
- * already normalized on the way in, so `core.autocrlf` cannot leak into them.
+ * The patch between two snapshots, with paths relative to the scope. Tree-to-tree
+ * diffs read blobs that were already normalized on the way in, so `core.autocrlf`
+ * cannot leak into them.
  */
-export async function diffTrees(cwd: string, before: string, after: string): Promise<DiffFile[]> {
-  const result = await git(cwd, ['diff', '--no-color', '--no-ext-diff', '-M', before, after]);
+export async function diffTrees(
+  { cwd, pathspec }: Scope,
+  before: string,
+  after: string,
+): Promise<DiffFile[]> {
+  const result = await git(cwd, [
+    'diff',
+    '--no-color',
+    '--no-ext-diff',
+    '--relative',
+    '-M',
+    before,
+    after,
+    '--',
+    ...pathspec,
+  ]);
   if (result.code !== 0) throw new Error(`git diff failed: ${result.stderr.trim()}`);
   return parseDiff(result.stdout);
 }

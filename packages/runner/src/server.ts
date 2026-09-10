@@ -11,7 +11,12 @@ import { createAdapter } from './agent/create-adapter.js';
 import { ClaudeAuth } from './auth/claude-auth.js';
 import type { Config } from './config.js';
 import { listWorkspaceFiles, readWorkspaceFile } from './files.js';
-import { collectDiff, diffTrees, snapshotTree } from './git/diff.js';
+import {
+  collectWorkspaceDiff,
+  diffWorkspace,
+  discoverRepos,
+  snapshotWorkspace,
+} from './git/workspace.js';
 import { decodeCommand, encode, encodeEvent, encodeResponse } from './protocol.js';
 import { FileThreadStore } from './thread-store.js';
 import { ThreadRegistry } from './threads.js';
@@ -248,10 +253,10 @@ function requireAuth(deps: ServerDeps): ClaudeAuth {
  * run a turn: the whole workspace against HEAD.
  */
 async function diffFor(deps: TurnDeps, threadId: string | undefined): Promise<DiffFile[]> {
-  const base = threadId ? deps.registry.baseTree(threadId) : undefined;
-  if (!base) return collectDiff(deps.cwd);
-  const now = await snapshotTree(deps.cwd);
-  return now ? diffTrees(deps.cwd, base, now) : [];
+  const repos = await discoverRepos(deps.cwd);
+  const base = threadId ? deps.registry.baseSnapshot(threadId) : undefined;
+  if (!base) return collectWorkspaceDiff(repos);
+  return diffWorkspace(repos, base, await snapshotWorkspace(repos));
 }
 
 async function reply(
