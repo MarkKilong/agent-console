@@ -49,6 +49,8 @@ export const EventSchema = z.discriminatedUnion('type', [
     type: z.literal('tool_call_finished'),
     toolCallId: z.string(),
     output: z.string().optional(),
+    /** The runner dropped the middle of an oversized output to keep the thread log small. */
+    outputTruncated: z.boolean().optional(),
     isError: z.boolean(),
     parentToolCallId: z.string().optional(),
   }),

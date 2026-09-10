@@ -220,10 +220,12 @@ function emit(message: SDKMessage, callbacks: TurnCallbacks, state: EmitState): 
       if (typeof content === 'string') return;
       for (const block of content) {
         if (block.type === 'tool_result') {
+          const capped = capToolOutput(toolResultText(block.content));
           callbacks.onEvent({
             type: 'tool_call_finished',
             toolCallId: block.tool_use_id,
-            output: toolResultText(block.content),
+            output: capped.output,
+            ...(capped.truncated ? { outputTruncated: true } : {}),
             isError: block.is_error ?? false,
             parentToolCallId: message.parent_tool_use_id ?? undefined,
           });
@@ -257,6 +259,23 @@ function toolResultText(content: unknown): string | undefined {
     )
     .join('');
   return text || undefined;
+}
+
+/** Ceiling on one tool result in the thread log; a `cat` of a huge file must not bloat it. */
+export const TOOL_OUTPUT_LIMIT = 64 * 1024;
+const HEAD_KEPT = 48 * 1024;
+const TAIL_KEPT = 16 * 1024;
+
+/** Keeps the head and the tail, which is where a long output says what happened. */
+export function capToolOutput(text: string | undefined): {
+  output: string | undefined;
+  truncated: boolean;
+} {
+  if (text === undefined || text.length <= TOOL_OUTPUT_LIMIT)
+    return { output: text, truncated: false };
+  const dropped = Math.round((text.length - HEAD_KEPT - TAIL_KEPT) / 1024);
+  const output = `${text.slice(0, HEAD_KEPT)}\n… [truncated ${dropped} KB] …\n${text.slice(-TAIL_KEPT)}`;
+  return { output, truncated: true };
 }
 
 function usageOf(message: Extract<SDKMessage, { type: 'result' }>): Usage {
