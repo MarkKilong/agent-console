@@ -11,9 +11,10 @@ import { useConsoleStore } from '@/store/use-console-store';
 import { useLayoutStore } from '@/store/use-layout-store';
 import { useModelSettings } from '@/store/use-model-settings';
 import { useActiveProject, useProjectsStore } from '@/store/use-projects-store';
+import { usePanelStore } from '@/store/use-panel-store';
 import { AddProjectDialog } from './add-project-dialog';
 import { ChatPane } from './chat-pane';
-import { DiffPane } from './diff-pane';
+import { RightPanel } from './right-panel';
 import { ThreadsSidebar } from './threads-sidebar';
 import { IconButton } from './ui';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
@@ -25,16 +26,10 @@ export function AppShell() {
   const status = useConsoleStore((state) => state.environment?.status);
   const activeThreadId = useConsoleStore((state) => state.activeThreadId);
   const sidebarOpen = useLayoutStore((state) => state.sidebarOpen);
-  const rightOpen = useLayoutStore((state) => state.rightOpen);
+  const activeTab = useLayoutStore((state) => state.activeTab);
 
   const [addOpen, setAddOpen] = useState(false);
   const [reopenError, setReopenError] = useState<string | null>(null);
-
-  // Tagged with its thread so switching threads drops the selection by derivation.
-  const [selection, setSelection] = useState<{ threadId: string | null; turn: number } | null>(
-    null,
-  );
-  const selectedTurn = selection && selection.threadId === activeThreadId ? selection.turn : null;
 
   // The persisted stores only load after mount, so the server render and the first
   // client render agree on the defaults.
@@ -100,7 +95,11 @@ export function AppShell() {
     if (client && activeThreadId) client.subscribe(activeThreadId);
   }, [client, activeThreadId]);
 
-  const selectTurn = (turn: number) => setSelection({ threadId: activeThreadId, turn });
+  /** "Show files" on a turn summary: the Diff tab, opened on that turn. */
+  const showFiles = (turnIndex: number) => {
+    usePanelStore.getState().showDiffForTurn(turnIndex);
+    useLayoutStore.getState().openTab('diff');
+  };
 
   return (
     <Group orientation="horizontal" className="h-screen bg-bg">
@@ -130,20 +129,16 @@ export function AppShell() {
         <ChatPane
           client={client}
           threadId={activeThreadId}
-          onShowFiles={selectTurn}
+          onShowFiles={showFiles}
           onAddProject={() => setAddOpen(true)}
         />
       </Panel>
 
-      {rightOpen && id ? (
+      {activeTab && id ? (
         <>
           <Separator className="w-px" />
           <Panel defaultSize="32" minSize="20" className="min-w-0 border-l border-line">
-            <DiffPane
-              threadId={activeThreadId}
-              selectedTurn={selectedTurn}
-              onSelectTurn={selectTurn}
-            />
+            <RightPanel client={client} threadId={activeThreadId} />
           </Panel>
         </>
       ) : null}
@@ -160,7 +155,8 @@ function ShellHeader() {
     state.activeThreadId ? state.threadMeta[state.activeThreadId]?.title : undefined,
   );
   const environment = useConsoleStore((state) => state.environment);
-  const { sidebarOpen, rightOpen, toggleSidebar, toggleRight } = useLayoutStore();
+  const { sidebarOpen, activeTab, toggleSidebar, toggleRight } = useLayoutStore();
+  const panelOpen = activeTab !== null;
 
   return (
     <div className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3 text-xs text-muted-foreground">
@@ -188,14 +184,14 @@ function ShellHeader() {
               <IconButton
                 onClick={toggleRight}
                 disabled={!environment}
-                aria-label={rightOpen ? 'Hide files' : 'Show files'}
+                aria-label={panelOpen ? 'Hide panel' : 'Show panel'}
               >
                 <PanelRight className="size-4" />
               </IconButton>
             </span>
           </TooltipTrigger>
           <TooltipContent>
-            {environment ? (rightOpen ? 'Hide files' : 'Show files') : 'Open a project first'}
+            {environment ? (panelOpen ? 'Hide panel' : 'Show panel') : 'Open a project first'}
           </TooltipContent>
         </Tooltip>
       </div>
