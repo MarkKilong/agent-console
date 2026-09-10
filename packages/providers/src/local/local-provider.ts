@@ -23,6 +23,8 @@ type Environment = {
   token: string;
   port: number;
   child?: ChildProcess;
+  /** Set while the runner is booting, so a second create waits instead of spawning. */
+  starting?: Promise<void>;
 };
 
 /** Runs the runner as a child process on this machine. */
@@ -37,19 +39,28 @@ export class LocalProvider implements EnvironmentProvider {
 
     // The provider outlives any one browser session, so reopening a folder must
     // reattach to its runner instead of leaving the old one running unattended.
-    const existing = this.findRunning(parsed.repoPath);
-    if (existing) return existing.handle;
+    const existing = this.findReusable(parsed.repoPath);
+    if (existing) {
+      await existing.starting;
+      return existing.handle;
+    }
 
     const id = randomUUID();
     const environment: Environment = {
       handle: { id, kind: 'local', status: 'creating' },
       spec: parsed,
       token: randomUUID(),
-      port: await freePort(),
+      // Reserved by boot; nothing reads it before create resolves.
+      port: 0,
     };
+    // Registered before the first await, so a concurrent create for this folder finds it.
     this.environments.set(id, environment);
-
-    await this.spawnRunner(environment);
+    environment.starting = this.boot(environment);
+    try {
+      await environment.starting;
+    } finally {
+      environment.starting = undefined;
+    }
     return environment.handle;
   }
 
@@ -83,14 +94,20 @@ export class LocalProvider implements EnvironmentProvider {
     return this.get(id).handle.status;
   }
 
-  private findRunning(repoPath: string): Environment | undefined {
+  /** A folder's runner, running or still booting under a create that has not returned. */
+  private findReusable(repoPath: string): Environment | undefined {
     const wanted = comparablePath(repoPath);
     return [...this.environments.values()].find(
       (environment) =>
-        environment.handle.status === 'running' &&
+        (environment.handle.status === 'running' || environment.starting !== undefined) &&
         environment.spec.repoPath !== undefined &&
         comparablePath(environment.spec.repoPath) === wanted,
     );
+  }
+
+  private async boot(environment: Environment): Promise<void> {
+    environment.port = await freePort();
+    await this.spawnRunner(environment);
   }
 
   private async spawnRunner(environment: Environment): Promise<void> {

@@ -45,6 +45,26 @@ describe('LocalProvider', () => {
     expect(Date.now() - started).toBeLessThan(10_000);
   }, 30_000);
 
+  it('answers two concurrent creates for one folder with a single runner', async () => {
+    const repoPath = await mkdtemp(join(tmpdir(), 'agent-console-local-'));
+    execFileSync('git', ['init', '-q'], { cwd: repoPath });
+
+    const provider = createProvider('local');
+    // One handle means one Environment record, and each of those spawns one child.
+    const [first, second] = await Promise.all([
+      provider.create({ repoPath, env: { RUNNER_AGENT: 'fake' } }),
+      provider.create({ repoPath, env: { RUNNER_AGENT: 'fake' } }),
+    ]);
+    expect(second.id).toBe(first.id);
+
+    const endpoint = await provider.endpoint(first.id);
+    await expect(
+      fetch(`${endpoint.url.replace('ws://', 'http://')}/healthz`).then((r) => r.ok),
+    ).resolves.toBe(true);
+
+    await provider.destroy(first.id);
+  }, 45_000);
+
   it('reuses the running environment for a folder instead of spawning a second runner', async () => {
     const repoPath = await mkdtemp(join(tmpdir(), 'agent-console-local-'));
     execFileSync('git', ['init', '-q'], { cwd: repoPath });
