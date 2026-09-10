@@ -9,7 +9,9 @@ const args = process.argv.slice(2);
 const configDir = process.env.CLAUDE_CONFIG_DIR;
 const credentials = configDir ? join(configDir, '.credentials.json') : undefined;
 
-if (args[0] !== 'auth') {
+if (args[0] === '--version') {
+  process.stdout.write('9.9.9 (Claude Code)\n');
+} else if (args[0] !== 'auth') {
   process.stderr.write(`unexpected command: ${args.join(' ')}\n`);
   process.exitCode = 2;
 } else if (args[1] === 'status') {
@@ -36,10 +38,9 @@ function status() {
 }
 
 function login() {
-  const host = args.includes('--console') ? 'platform.claude.com' : 'claude.com/cai';
   process.stdout.write('Opening browser to sign in…\n');
   process.stdout.write(
-    `If the browser didn't open, visit: https://${host}/oauth/authorize?code=true&client_id=fake\n`,
+    "If the browser didn't open, visit: https://claude.com/cai/oauth/authorize?code=true&client_id=fake\n",
   );
   process.stdout.write('Paste code here if prompted > ');
 

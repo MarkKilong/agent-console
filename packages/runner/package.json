@@ -8,6 +8,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./data-root": {
+      "types": "./dist/data-root.d.ts",
+      "import": "./dist/data-root.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

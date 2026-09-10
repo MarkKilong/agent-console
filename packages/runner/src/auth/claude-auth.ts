@@ -1,7 +1,7 @@
 import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AuthLoginMode, AuthStatusData } from '@agent-console/contracts';
+import type { AuthStatusData } from '@agent-console/contracts';
 
 /** Narrow slice of `child_process.spawn`, so tests can point it at a fixture. */
 export type SpawnCli = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
@@ -28,6 +28,8 @@ const URL_TIMEOUT_MS = 30_000;
 export class ClaudeAuth {
   private readonly spawn: SpawnCli;
   private pending: PendingLogin | undefined;
+  /** The CLI's version never changes under a running runner, so ask for it once. */
+  private version: Promise<string | undefined> | undefined;
 
   constructor(private readonly options: ClaudeAuthOptions) {
     this.spawn =
@@ -35,7 +37,11 @@ export class ClaudeAuth {
   }
 
   async status(): Promise<AuthStatusData> {
-    const extra = { apiKey: this.apiKey() !== undefined, loginPending: this.pending !== undefined };
+    const extra = {
+      apiKey: this.apiKey() !== undefined,
+      loginPending: this.pending !== undefined,
+      version: await this.cliVersion(),
+    };
     const result = await this.run(['auth', 'status', '--json']);
     const parsed = result.code === 0 ? parseStatus(result.stdout) : undefined;
     if (!parsed) return { loggedIn: false, authMethod: 'none', ...extra };
@@ -50,9 +56,9 @@ export class ClaudeAuth {
   }
 
   /** Starts a login and resolves once the CLI has printed the URL to approve. */
-  loginStart(mode: AuthLoginMode): Promise<string> {
+  loginStart(): Promise<string> {
     this.killPending();
-    const child = this.spawnCli(['auth', 'login', ...(mode === 'console' ? ['--console'] : [])]);
+    const child = this.spawnCli(['auth', 'login']);
     const login: PendingLogin = { child, output: '' };
     this.pending = login;
 
@@ -143,6 +149,14 @@ export class ClaudeAuth {
     this.killPending();
   }
 
+  /** Advisory: a CLI too old to answer just leaves the version out of the status. */
+  private cliVersion(): Promise<string | undefined> {
+    this.version ??= this.run(['--version']).then((result) =>
+      result.code === 0 ? parseVersion(result.stdout) : undefined,
+    );
+    return this.version;
+  }
+
   private credentialsPath(): string {
     return join(this.options.dataDir, 'credentials.json');
   }
@@ -195,6 +209,11 @@ function findAuthUrl(output: string): string | undefined {
   const visit = lines.find((line) => line.includes('visit:') && line.includes('https://'));
   const found = visit ?? lines.find((line) => line.includes('https://'));
   return found ? /https:\/\/\S+/.exec(found)?.[0] : undefined;
+}
+
+/** `claude --version` prints `2.1.267 (Claude Code)`; only the number is worth showing. */
+function parseVersion(stdout: string): string | undefined {
+  return /\d+(?:\.\d+)+/.exec(stdout)?.[0];
 }
 
 function parseStatus(stdout: string): Record<string, unknown> | undefined {

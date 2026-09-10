@@ -31,6 +31,7 @@ export function testConfig(cwd: string, token = 'test-token'): Config {
     codexModel: undefined,
     permissionMode: 'default',
     claudeConfigDir: undefined,
+    dataRoot: `${cwd}-data`,
     dataDir: `${cwd}-data`,
     // Sibling of the temp repo, so thread logs never show up in its diff.
     threadsDir: `${cwd}-threads`,
@@ -44,14 +45,17 @@ const spawnFakeClaude: SpawnCli = (binary, args, options) =>
   spawn(process.execPath, [binary, ...args], options);
 
 /** `ClaudeAuth` driving the fixture CLI, with both its directories under `root`. */
-export function fakeClaudeAuth(root: string): ClaudeAuth {
+export function fakeClaudeAuth(root: string, onSpawn?: (args: string[]) => void): ClaudeAuth {
   return new ClaudeAuth({
     binary: FAKE_CLAUDE,
     configDir: join(root, 'claude'),
     dataDir: join(root, 'data'),
     // Set so the nested-claude guard has something to strip.
     env: { ...process.env, CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'cli' },
-    spawn: spawnFakeClaude,
+    spawn: (binary, args, options) => {
+      onSpawn?.(args);
+      return spawnFakeClaude(binary, args, options);
+    },
   });
 }
 

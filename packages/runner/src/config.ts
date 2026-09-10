@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { accessSync, constants } from 'node:fs';
-import { homedir } from 'node:os';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
+import { dataRoot } from './data-root.js';
 
 export type AgentKind = 'claude' | 'codex' | 'fake';
 
@@ -17,7 +17,9 @@ export type Config = {
   permissionMode: string;
   /** Config dir the Claude CLI reads credentials from; unset means the machine default. */
   claudeConfigDir: string | undefined;
-  /** Per-workspace state the runner owns: thread logs, the stored API key. */
+  /** Machine-level data folder; the stored API key lives here, shared by every runner. */
+  dataRoot: string;
+  /** Per-workspace state the runner owns. */
   dataDir: string;
   /** Where this workspace's thread logs live. */
   threadsDir: string;
@@ -55,7 +57,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
 
   const cwd = resolve(env.RUNNER_CWD?.trim() || process.cwd());
-  const data = dataDir(env, cwd);
+  const root = dataRoot(env);
+  const data = workspaceDir(root, cwd);
   return {
     port: Number(env.RUNNER_PORT ?? 4310),
     token,
@@ -66,13 +69,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     codexModel: env.CODEX_MODEL?.trim() || undefined,
     permissionMode: env.RUNNER_PERMISSION_MODE?.trim() || 'default',
     claudeConfigDir: env.CLAUDE_CONFIG_DIR?.trim() || undefined,
+    dataRoot: root,
     dataDir: data,
     threadsDir: join(data, 'threads'),
   };
 }
 
-function dataDir(env: NodeJS.ProcessEnv, cwd: string): string {
-  const root = env.AGENT_CONSOLE_DATA_DIR?.trim() || join(homedir(), '.agent-console');
+function workspaceDir(root: string, cwd: string): string {
   // Windows paths are case-insensitive, so fold case before hashing the workspace.
   const normalized = process.platform === 'win32' ? cwd.toLowerCase() : cwd;
   return join(root, createHash('sha1').update(normalized).digest('hex').slice(0, 12));

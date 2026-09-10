@@ -335,7 +335,7 @@ describe('auth commands', () => {
     server = await startServer(config, fakeClaudeAuth(root));
     const client = await connect(server.port, 'test-token');
 
-    client.send({ type: 'auth_login_start', requestId: 'a1', mode: 'claudeai' });
+    client.send({ type: 'auth_login_start', requestId: 'a1' });
     const started = await client.waitForResponse('a1');
     expect(started.ok && 'authUrl' in started.data && started.data.authUrl).toMatch(/^https:\/\//);
 

@@ -46,6 +46,8 @@ export const AuthStatusDataSchema = z.object({
   apiKey: z.boolean(),
   /** A login is waiting for its code. */
   loginPending: z.boolean(),
+  /** What `claude --version` reports, when it could be read. */
+  version: z.string().optional(),
 });
 export type AuthStatusData = z.infer<typeof AuthStatusDataSchema>;
 

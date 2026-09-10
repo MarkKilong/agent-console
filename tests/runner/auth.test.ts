@@ -7,10 +7,12 @@ import { fakeClaudeAuth } from './helpers.js';
 
 let auth: ClaudeAuth;
 let root: string;
+let spawned: string[][];
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'agent-console-auth-'));
-  auth = fakeClaudeAuth(root);
+  spawned = [];
+  auth = fakeClaudeAuth(root, (args) => spawned.push(args));
 });
 
 describe('login', () => {
@@ -22,16 +24,16 @@ describe('login', () => {
       loginPending: false,
     });
 
-    const url = await auth.loginStart('claudeai');
+    const url = await auth.loginStart();
     expect(url).toMatch(/^https:\/\/claude\.com\/cai\/oauth\/authorize\?/);
+    // The Console login is gone: an API key covers API billing already.
+    expect(spawned.flat()).not.toContain('--console');
     await expect(auth.status()).resolves.toMatchObject({ loginPending: true });
 
     await expect(auth.loginCode('nope')).rejects.toThrow(/Login failed: Invalid code/);
     await expect(auth.status()).resolves.toMatchObject({ loggedIn: false, loginPending: false });
 
-    const consoleUrl = await auth.loginStart('console');
-    expect(consoleUrl).toMatch(/^https:\/\/platform\.claude\.com\//);
-
+    await auth.loginStart();
     await expect(auth.loginCode('good-code')).resolves.toBeUndefined();
     await expect(auth.status()).resolves.toMatchObject({
       loggedIn: true,
@@ -47,6 +49,15 @@ describe('login', () => {
 
   it('refuses a code with no login in progress', async () => {
     await expect(auth.loginCode('good-code')).rejects.toThrow(/No login in progress/);
+  });
+});
+
+describe('version', () => {
+  it('reports the CLI version, without the trailer, and asks for it once', async () => {
+    await expect(auth.status()).resolves.toMatchObject({ version: '9.9.9' });
+    await expect(auth.status()).resolves.toMatchObject({ version: '9.9.9' });
+
+    expect(spawned.filter((args) => args[0] === '--version')).toHaveLength(1);
   });
 });
 

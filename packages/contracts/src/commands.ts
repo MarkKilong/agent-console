@@ -3,10 +3,6 @@ import { z } from 'zod';
 export const PermissionDecisionSchema = z.enum(['allow', 'deny']);
 export type PermissionDecision = z.infer<typeof PermissionDecisionSchema>;
 
-/** `claudeai` is the subscription login, `console` the Console/API-billing one. */
-export const AuthLoginModeSchema = z.enum(['claudeai', 'console']);
-export type AuthLoginMode = z.infer<typeof AuthLoginModeSchema>;
-
 /** Reasoning effort, as the Claude Agent SDK names its levels. */
 export const EffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 export type Effort = z.infer<typeof EffortSchema>;
@@ -44,7 +40,7 @@ export const CommandSchema = z.discriminatedUnion('type', [
     afterSeq: z.number().int().nonnegative().optional(),
   }),
   z.object({ type: z.literal('auth_status'), requestId }),
-  z.object({ type: z.literal('auth_login_start'), requestId, mode: AuthLoginModeSchema }),
+  z.object({ type: z.literal('auth_login_start'), requestId }),
   z.object({ type: z.literal('auth_login_code'), requestId, code: z.string().min(1) }),
   z.object({ type: z.literal('auth_logout'), requestId }),
   z.object({ type: z.literal('auth_set_api_key'), requestId, key: z.string().min(1) }),

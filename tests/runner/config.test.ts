@@ -1,6 +1,6 @@
 import { mkdtemp, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../packages/runner/src/config.js';
 
@@ -74,6 +74,26 @@ describe('loadConfig', () => {
     });
     expect(config.agent).toBe('claude');
     expect(config.codexBinary).toBeUndefined();
+  });
+
+  it('shares one data root and hashes the workspace under it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agent-console-root-'));
+    const config = loadConfig({
+      RUNNER_TOKEN: 'dev',
+      RUNNER_AGENT: 'fake',
+      AGENT_CONSOLE_DATA_DIR: root,
+      RUNNER_CWD: tmpdir(),
+    });
+
+    expect(config.dataRoot).toBe(root);
+    expect(dirname(config.dataDir)).toBe(root);
+    expect(config.dataDir).not.toBe(root);
+    expect(config.threadsDir).toBe(join(config.dataDir, 'threads'));
+  });
+
+  it('defaults the data root to ~/.agent-console', () => {
+    const config = loadConfig({ RUNNER_TOKEN: 'dev', RUNNER_AGENT: 'fake' });
+    expect(config.dataRoot).toBe(join(homedir(), '.agent-console'));
   });
 
   it('complains when codex is not on PATH', () => {

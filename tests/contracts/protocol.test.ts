@@ -41,7 +41,7 @@ describe('commands', () => {
   it('round-trips the auth commands', () => {
     for (const command of [
       { type: 'auth_status', requestId: 'r1' },
-      { type: 'auth_login_start', requestId: 'r1', mode: 'console' },
+      { type: 'auth_login_start', requestId: 'r1' },
       { type: 'auth_login_code', requestId: 'r1', code: 'abc' },
       { type: 'auth_logout', requestId: 'r1' },
       { type: 'auth_set_api_key', requestId: 'r1', key: 'sk-ant' },
@@ -49,15 +49,6 @@ describe('commands', () => {
     ]) {
       expect(CommandSchema.parse(command)).toEqual(command);
     }
-  });
-
-  it('rejects an unknown auth login mode', () => {
-    const result = CommandSchema.safeParse({
-      type: 'auth_login_start',
-      requestId: 'r1',
-      mode: 'bedrock',
-    });
-    expect(result.success).toBe(false);
   });
 
   it('rejects an unknown command type', () => {

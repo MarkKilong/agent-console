@@ -185,7 +185,7 @@ async function dispatch(
 
     case 'auth_login_start':
       await reply(socket, command.requestId, async () => ({
-        authUrl: await requireAuth(deps).loginStart(command.mode),
+        authUrl: await requireAuth(deps).loginStart(),
       }));
       return;
 
@@ -224,7 +224,8 @@ function createClaudeAuth(config: Config): ClaudeAuth | undefined {
   return new ClaudeAuth({
     binary: config.claudeBinary,
     configDir: config.claudeConfigDir,
-    dataDir: config.dataDir,
+    // Machine-level: one stored key serves every workspace.
+    dataDir: config.dataRoot,
     env: process.env,
   });
 }
