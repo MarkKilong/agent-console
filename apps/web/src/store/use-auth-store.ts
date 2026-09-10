@@ -1,4 +1,4 @@
-import type { AuthStatusData } from '@agent-console/contracts';
+import type { AuthStatusData, ModelInfo } from '@agent-console/contracts';
 import { create } from 'zustand';
 import { RunnerClient } from '@/lib/runner-client';
 
@@ -11,11 +11,16 @@ type AuthStore = {
   auth?: AuthStatusData;
   /** A login waiting for the code the user pastes back. */
   login?: { authUrl: string };
+  /** What the CLI reports it can run; empty until it has answered once. */
+  models: ModelInfo[];
+  /** Whether listing has been tried, so an empty list can be told from a pending one. */
+  modelsLoaded: boolean;
   /** Never rendered, so nothing subscribes to it; here so tests can stand it in. */
   client: RunnerClient | null;
 
   ensure(): Promise<void>;
   refresh(): Promise<void>;
+  loadModels(): Promise<void>;
   startLogin(): Promise<void>;
   submitCode(code: string): Promise<void>;
   cancelLogin(): Promise<void>;
@@ -37,6 +42,8 @@ let opening: Promise<void> | undefined;
 export const useAuthStore = create<AuthStore>((set, get) => ({
   environment: null,
   status: 'idle',
+  models: [],
+  modelsLoaded: false,
   client: null,
 
   // Assigned before the first await, so a double mount cannot open two environments.
@@ -54,6 +61,20 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     }
   },
 
+  // An unauthenticated CLI answers with an error, so keep the last list it did give.
+  loadModels: async () => {
+    const client = get().client;
+    if (!client) return;
+    try {
+      const data = await client.request({ type: 'list_models' });
+      if ('models' in data && data.models.length > 0) set({ models: data.models });
+    } catch {
+      // Left to the next login or key save.
+    } finally {
+      set({ modelsLoaded: true });
+    }
+  },
+
   startLogin: async () => {
     const data = await requireClient(get()).request({ type: 'auth_login_start' });
     if (!('authUrl' in data)) throw new Error('The runner did not return an authorization URL');
@@ -64,6 +85,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     await requireClient(get()).request({ type: 'auth_login_code', code });
     set({ login: undefined });
     await get().refresh();
+    await get().loadModels();
   },
 
   // `auth_logout` is what kills the login the CLI is holding open on its stdin.
@@ -78,6 +100,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   setApiKey: async (key) => {
     await requireClient(get()).request({ type: 'auth_set_api_key', key });
     await get().refresh();
+    await get().loadModels();
   },
 
   clearApiKey: async () => {
@@ -99,7 +122,12 @@ async function open(): Promise<void> {
       onEvent: () => {},
       onStatus: (connection) => {
         set({ status: connection === 'open' ? 'open' : 'opening' });
-        if (connection === 'open') void useAuthStore.getState().refresh();
+        if (connection !== 'open') return;
+        // Listing takes seconds, so it waits for the status the card renders first.
+        void useAuthStore
+          .getState()
+          .refresh()
+          .then(() => useAuthStore.getState().loadModels());
       },
     });
     set({ environment, client });

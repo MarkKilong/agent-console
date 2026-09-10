@@ -27,6 +27,8 @@ beforeEach(() => {
     error: undefined,
     auth: undefined,
     login: undefined,
+    models: [],
+    modelsLoaded: false,
     client: null,
   });
 });

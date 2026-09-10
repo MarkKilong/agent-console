@@ -4,8 +4,19 @@ import type { PermissionMode } from '@agent-console/contracts';
 import { ChevronDown, Lock, LockOpen, Paperclip, PencilLine } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
-import { ACCESS_MODES, EFFORTS, MODELS, labelOf, type Choice } from '@/lib/models';
+import {
+  ACCESS_MODES,
+  EFFORTS,
+  effortChoices,
+  labelOf,
+  mergeModels,
+  modelChoices,
+  resolveModelId,
+  type Choice,
+} from '@/lib/models';
+import { useAuthStore } from '@/store/use-auth-store';
 import { useComposerSettings } from '@/store/use-composer-settings';
+import { useModelSettings } from '@/store/use-model-settings';
 import { ClaudeMark } from './claude-mark';
 import { Button } from './ui/button';
 import {
@@ -28,6 +39,14 @@ export function Composer({ disabled, turnActive, placeholder, onSend, onStop }: 
   const [text, setText] = useState('');
   const { model, effort, permissionMode, setModel, setEffort, setPermissionMode } =
     useComposerSettings();
+  const models = useAuthStore((state) => state.models);
+  const disabledModels = useModelSettings((state) => state.disabled);
+  const customModels = useModelSettings((state) => state.custom);
+
+  // The persisted id may name a row by its alias or by what that alias resolves to.
+  const selectedModel = resolveModelId(models, model);
+  // A hand-added model reports no levels, so effort stays on the CLI's list and defaults.
+  const efforts = effortChoices(models, selectedModel);
 
   function send() {
     const prompt = text.trim();
@@ -61,12 +80,22 @@ export function Composer({ disabled, turnActive, placeholder, onSend, onStop }: 
           <div className="flex min-w-0 items-center gap-1">
             <Picker
               label="Model"
-              choices={MODELS}
-              value={model}
+              choices={modelChoices(
+                mergeModels(models, customModels),
+                disabledModels,
+                selectedModel,
+              )}
+              value={selectedModel}
               onChange={setModel}
               icon={() => <ClaudeMark />}
             />
-            <Picker label="Effort" choices={EFFORTS} value={effort} onChange={setEffort} />
+            <Picker
+              label="Effort"
+              choices={efforts?.length ? efforts : EFFORTS}
+              value={effort}
+              onChange={setEffort}
+              disabledReason={efforts?.length === 0 ? 'This model has one effort level' : undefined}
+            />
             <Picker
               label="Access"
               choices={ACCESS_MODES}
@@ -103,6 +132,7 @@ function Picker<T extends string>({
   value,
   onChange,
   icon,
+  disabledReason,
 }: {
   label: string;
   choices: Choice<T>[];
@@ -110,19 +140,39 @@ function Picker<T extends string>({
   onChange(id: T): void;
   /** Leading icon for a choice, shown on the trigger and in the menu. */
   icon?: (id: T) => ReactNode;
+  /** Why there is nothing to pick; shown as a tooltip on the dead trigger. */
+  disabledReason?: string;
 }) {
+  const trigger = (
+    <Button variant="ghost" size="sm" aria-label={label} disabled={Boolean(disabledReason)}>
+      {icon?.(value)}
+      {labelOf(choices, value)}
+      <ChevronDown className="opacity-70" />
+    </Button>
+  );
+
+  if (disabledReason) {
+    return (
+      <Tooltip>
+        {/* A disabled button swallows pointer events, so the trigger is the wrapper. */}
+        <TooltipTrigger asChild>
+          <span>{trigger}</span>
+        </TooltipTrigger>
+        <TooltipContent>{disabledReason}</TooltipContent>
+      </Tooltip>
+    );
+  }
+
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" aria-label={label}>
-          {icon?.(value)}
-          {labelOf(choices, value)}
-          <ChevronDown className="opacity-70" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-auto">
         {choices.map((choice) => (
-          <DropdownMenuItem key={choice.id} onSelect={() => onChange(choice.id)}>
+          <DropdownMenuItem
+            key={choice.id}
+            onSelect={() => onChange(choice.id)}
+            className="whitespace-nowrap"
+          >
             {icon?.(choice.id)}
             {choice.label}
           </DropdownMenuItem>

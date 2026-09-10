@@ -9,6 +9,7 @@ import { useAuthStore } from '@/store/use-auth-store';
 import { useComposerSettings } from '@/store/use-composer-settings';
 import { useConsoleStore } from '@/store/use-console-store';
 import { useLayoutStore } from '@/store/use-layout-store';
+import { useModelSettings } from '@/store/use-model-settings';
 import { useActiveProject, useProjectsStore } from '@/store/use-projects-store';
 import { AddProjectDialog } from './add-project-dialog';
 import { ChatPane } from './chat-pane';
@@ -46,6 +47,7 @@ export function AppShell() {
       await Promise.all([
         useProjectsStore.persist.rehydrate(),
         useComposerSettings.persist.rehydrate(),
+        useModelSettings.persist.rehydrate(),
         useLayoutStore.persist.rehydrate(),
       ]);
 

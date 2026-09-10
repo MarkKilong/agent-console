@@ -13,6 +13,7 @@ export type RequestCommand =
   | { type: 'read_file'; path: string }
   | { type: 'get_diff'; threadId?: string }
   | { type: 'list_threads' }
+  | { type: 'list_models' }
   | { type: 'auth_status' }
   | { type: 'auth_login_start' }
   | { type: 'auth_login_code'; code: string }

@@ -1,14 +1,17 @@
 'use client';
 
 import type { AuthStatusData } from '@agent-console/contracts';
-import { ExternalLink, RefreshCw } from 'lucide-react';
+import { ExternalLink, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
+import { mergeModels, type ModelRow } from '@/lib/models';
 import { isClaudeConnected, useAuthStore } from '@/store/use-auth-store';
+import { useModelSettings } from '@/store/use-model-settings';
 import { ClaudeMark } from '../claude-mark';
 import { Dot, IconButton, Spinner } from '../ui';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { Switch } from '../ui/switch';
 
 type Run = (action: () => Promise<void>) => void;
 
@@ -29,6 +32,7 @@ export function ProvidersPage() {
   // A hard reload on this route has no shell to have opened the environment.
   useEffect(() => {
     void useAuthStore.getState().ensure();
+    void useModelSettings.persist.rehydrate();
   }, []);
 
   const run: Run = (action) => {
@@ -70,6 +74,8 @@ export function ProvidersPage() {
 
           {error ? <p className="text-danger">{error}</p> : null}
 
+          {problem ? null : <Models />}
+
           <div className="flex items-center justify-end gap-1 font-mono text-[11px] text-muted-foreground">
             {version}
             <IconButton
@@ -84,6 +90,160 @@ export function ProvidersPage() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** The CLI's catalogue plus hand-added ids; a switch per row decides what the picker offers. */
+function Models() {
+  const models = useAuthStore((state) => state.models);
+  const loaded = useAuthStore((state) => state.modelsLoaded);
+  const disabled = useModelSettings((state) => state.disabled);
+  const custom = useModelSettings((state) => state.custom);
+  const toggle = useModelSettings((state) => state.toggle);
+  const removeCustom = useModelSettings((state) => state.removeCustom);
+
+  const [filter, setFilter] = useState('');
+  const [adding, setAdding] = useState(false);
+
+  const rows = mergeModels(models, custom);
+  const needle = filter.trim().toLowerCase();
+  const shown = needle
+    ? rows.filter((row) =>
+        `${row.name} ${row.id} ${row.description}`.toLowerCase().includes(needle),
+      )
+    : rows;
+
+  return (
+    <div className="space-y-2 border-t border-line pt-4">
+      <div className="flex items-center gap-2">
+        <p className="flex-1 text-sm font-medium text-fg">Models</p>
+        {rows.length ? (
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {rows.length} {rows.length === 1 ? 'model' : 'models'}
+          </span>
+        ) : null}
+        <div className="relative">
+          <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setFilter('');
+            }}
+            placeholder="Filter models"
+            aria-label="Filter models"
+            className="h-7 w-36 pl-7 text-xs md:text-xs"
+          />
+        </div>
+        <Button variant="ghost" size="sm" onClick={() => setAdding((open) => !open)}>
+          <Plus />
+          Add model
+        </Button>
+      </div>
+
+      {adding ? <AddCustom rows={rows} onClose={() => setAdding(false)} /> : null}
+
+      {rows.length === 0 ? (
+        loaded ? (
+          <p className="text-muted-foreground">No models reported. Connect Claude first.</p>
+        ) : (
+          <p className="flex items-center gap-2 text-muted-foreground">
+            <Spinner />
+            Loading models…
+          </p>
+        )
+      ) : shown.length === 0 ? (
+        <p className="text-muted-foreground">No models match</p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {shown.map((model) => (
+            <li key={model.id} className="flex items-center gap-3 py-2">
+              <div className="min-w-0 flex-1">
+                <p className="flex min-w-0 items-baseline gap-2">
+                  <span className="truncate text-fg">{model.name}</span>
+                  <span className="truncate font-mono text-[11px] text-muted-foreground">
+                    {model.id}
+                  </span>
+                </p>
+                <p className="truncate text-muted-foreground">{model.description}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2 font-mono text-[11px] text-muted-foreground">
+                {model.custom ? <span>Custom</span> : null}
+                {model.effortLevels?.length ? <span>Effort</span> : null}
+                {model.fastMode ? <span>Fast mode</span> : null}
+              </div>
+              <Switch
+                checked={!disabled.includes(model.id)}
+                onCheckedChange={() => toggle(model.id)}
+                aria-label={`Enable ${model.name}`}
+              />
+              {/* The empty slot keeps every switch on the same column. */}
+              {model.custom ? (
+                <IconButton
+                  onClick={() => removeCustom(model.id)}
+                  aria-label={`Remove ${model.name}`}
+                  title="Remove"
+                  className="size-6"
+                >
+                  <X className="size-3" />
+                </IconButton>
+              ) : (
+                <span className="size-6 shrink-0" />
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** Inline form for an id the CLI does not report, e.g. an older `claude-opus-4-8`. */
+function AddCustom({ rows, onClose }: { rows: ModelRow[]; onClose(): void }) {
+  const addCustom = useModelSettings((state) => state.addCustom);
+  const [id, setId] = useState('');
+  const [name, setName] = useState('');
+
+  const trimmed = id.trim();
+  const duplicate = rows.some((row) => row.id === trimmed);
+
+  const submit = () => {
+    if (!trimmed || duplicate) return;
+    addCustom(trimmed, name.trim() || undefined);
+    onClose();
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex gap-1.5">
+        <Input
+          value={id}
+          onChange={(event) => setId(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') submit();
+          }}
+          placeholder="claude-opus-4-8"
+          aria-label="Model id"
+          className="font-mono"
+        />
+        <Input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') submit();
+          }}
+          placeholder="Display name (optional)"
+          aria-label="Display name"
+        />
+        <Button size="sm" disabled={!trimmed || duplicate} onClick={submit}>
+          Add
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Cancel
+        </Button>
+      </div>
+      {duplicate ? <p className="text-danger">Already listed</p> : null}
     </div>
   );
 }
