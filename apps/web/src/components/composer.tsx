@@ -18,6 +18,7 @@ import { useAuthStore } from '@/store/use-auth-store';
 import { useComposerSettings } from '@/store/use-composer-settings';
 import { useModelSettings } from '@/store/use-model-settings';
 import { ClaudeMark } from './claude-mark';
+import { Spinner } from './ui';
 import { Button } from './ui/button';
 import {
   DropdownMenu,
@@ -30,12 +31,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 type Props = {
   disabled: boolean;
   turnActive: boolean;
+  /** Stop was asked for and the turn has not ended yet. */
+  stopping: boolean;
   placeholder: string;
   onSend(text: string): void;
   onStop(): void;
 };
 
-export function Composer({ disabled, turnActive, placeholder, onSend, onStop }: Props) {
+export function Composer({ disabled, turnActive, stopping, placeholder, onSend, onStop }: Props) {
   const [text, setText] = useState('');
   const { model, effort, permissionMode, setModel, setEffort, setPermissionMode } =
     useComposerSettings();
@@ -117,7 +120,7 @@ export function Composer({ disabled, turnActive, placeholder, onSend, onStop }: 
               </TooltipTrigger>
               <TooltipContent>Coming soon</TooltipContent>
             </Tooltip>
-            {turnActive ? <StopButton onClick={onStop} /> : null}
+            {turnActive ? <StopButton onClick={onStop} stopping={stopping} /> : null}
             <SendButton onClick={send} disabled={disabled || !text.trim()} />
           </div>
         </div>
@@ -213,16 +216,24 @@ function SendButton({ onClick, disabled }: { onClick(): void; disabled: boolean 
   );
 }
 
-function StopButton({ onClick }: { onClick(): void }) {
+function StopButton({ onClick, stopping }: { onClick(): void; stopping: boolean }) {
   return (
     <button
       onClick={onClick}
+      disabled={stopping}
       aria-label="Stop"
-      className="flex size-8 items-center justify-center rounded-full bg-danger/90 text-white transition-all duration-150 hover:scale-105 hover:bg-danger"
+      className={cn(
+        'flex size-8 items-center justify-center rounded-full bg-danger/90 text-white transition-all duration-150',
+        'hover:scale-105 hover:bg-danger disabled:pointer-events-none disabled:opacity-60',
+      )}
     >
-      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
-        <rect x="2" y="2" width="8" height="8" rx="1.5" fill="currentColor" />
-      </svg>
+      {stopping ? (
+        <Spinner className="size-3.5" />
+      ) : (
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
+          <rect x="2" y="2" width="8" height="8" rx="1.5" fill="currentColor" />
+        </svg>
+      )}
     </button>
   );
 }

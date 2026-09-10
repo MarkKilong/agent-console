@@ -1,28 +1,40 @@
-import type { DiffFile, Event } from '@agent-console/contracts';
+import type { DiffFile, Event, Usage } from '@agent-console/contracts';
 import { parseUnifiedDiff } from '@/lib/parse-unified-diff';
 
+/** `ts` is the timestamp of the event that created the item, for timestamps and elapsed times. */
 export type ChatItem =
-  | { kind: 'user'; id: string; text: string }
-  | { kind: 'assistant'; id: string; text: string; streaming: boolean; thinking?: string }
+  | { kind: 'user'; id: string; ts: number; text: string }
+  | {
+      kind: 'assistant';
+      id: string;
+      ts: number;
+      text: string;
+      streaming: boolean;
+      thinking?: string;
+    }
   | {
       kind: 'tool';
       id: string;
+      ts: number;
       name: string;
       input: unknown;
       output: string | undefined;
       isError: boolean;
       done: boolean;
+      finishedAt?: number;
+      outputTruncated?: boolean;
       parentToolCallId: string | undefined;
     }
   | {
       kind: 'summary';
       id: string;
+      ts: number;
       turnIndex: number;
       files: number;
       added: number;
       removed: number;
     }
-  | { kind: 'error'; id: string; message: string; code: string | undefined };
+  | { kind: 'error'; id: string; ts: number; message: string; code: string | undefined };
 
 export type PendingPermission = {
   requestId: string;
@@ -37,6 +49,9 @@ export type Turn = {
   files: DiffFile[];
   added: number;
   removed: number;
+  finishedAt?: number;
+  stopReason?: string;
+  usage?: Usage;
 };
 
 export type ThreadState = {
@@ -73,7 +88,7 @@ export function foldEvent(thread: ThreadState, event: Event): ThreadState {
 
   switch (event.type) {
     case 'user_message':
-      next.items.push({ kind: 'user', id: `user-${event.seq}`, text: event.text });
+      next.items.push({ kind: 'user', id: `user-${event.seq}`, ts: event.ts, text: event.text });
       break;
 
     case 'turn_started':
@@ -85,21 +100,22 @@ export function foldEvent(thread: ThreadState, event: Event): ThreadState {
       break;
 
     case 'thinking_delta':
-      appendThinking(next.items, event.text, event.seq);
+      appendThinking(next.items, event.text, event.seq, event.ts);
       break;
 
     case 'assistant_delta':
-      appendDelta(next.items, event.text, event.seq);
+      appendDelta(next.items, event.text, event.seq, event.ts);
       break;
 
     case 'assistant_message':
-      finishAssistant(next.items, event.text, event.seq);
+      finishAssistant(next.items, event.text, event.seq, event.ts);
       break;
 
     case 'tool_call_started':
       next.items.push({
         kind: 'tool',
         id: event.toolCallId,
+        ts: event.ts,
         name: event.name,
         input: event.input,
         output: undefined,
@@ -110,7 +126,7 @@ export function foldEvent(thread: ThreadState, event: Event): ThreadState {
       break;
 
     case 'tool_call_finished':
-      finishTool(next.items, event.toolCallId, event.output, event.isError);
+      finishTool(next.items, event);
       break;
 
     case 'permission_requested':
@@ -131,18 +147,27 @@ export function foldEvent(thread: ThreadState, event: Event): ThreadState {
 
     case 'diff_ready':
       next.turns = attachDiff(thread.turns, event.files, event.ts);
-      pushSummary(next.items, next.turns.at(-1), event.seq);
+      pushSummary(next.items, next.turns.at(-1), event.seq, event.ts);
       break;
 
-    case 'turn_finished':
+    case 'turn_finished': {
       next.turnActive = false;
       closeStreaming(next.items);
+      const last = thread.turns.at(-1);
+      if (last) {
+        next.turns = [
+          ...thread.turns.slice(0, -1),
+          { ...last, finishedAt: event.ts, stopReason: event.stopReason, usage: event.usage },
+        ];
+      }
       break;
+    }
 
     case 'error':
       next.items.push({
         kind: 'error',
         id: `error-${event.seq}`,
+        ts: event.ts,
         message: event.message,
         code: event.code,
       });
@@ -168,11 +193,12 @@ function attachDiff(turns: Turn[], files: DiffFile[], ts: number): Turn[] {
   return last ? [...turns.slice(0, -1), updated] : [updated];
 }
 
-function pushSummary(items: ChatItem[], turn: Turn | undefined, seq: number): void {
+function pushSummary(items: ChatItem[], turn: Turn | undefined, seq: number, ts: number): void {
   if (!turn || turn.files.length === 0) return;
   items.push({
     kind: 'summary',
     id: `summary-${seq}`,
+    ts,
     turnIndex: turn.index,
     files: turn.files.length,
     added: turn.added,
@@ -180,26 +206,30 @@ function pushSummary(items: ChatItem[], turn: Turn | undefined, seq: number): vo
   });
 }
 
+/**
+ * Only the newest item can still be streaming. Text that arrives after a tool call
+ * belongs to a new message, so an earlier open item (typically one that only holds
+ * thinking) is closed instead of being appended to.
+ */
 function openAssistantIndex(items: ChatItem[]): number {
-  for (let i = items.length - 1; i >= 0; i -= 1) {
-    const item = items[i];
-    if (item?.kind === 'assistant' && item.streaming) return i;
-  }
+  const last = items.at(-1);
+  if (last?.kind === 'assistant' && last.streaming) return items.length - 1;
+  closeStreaming(items);
   return -1;
 }
 
-function appendDelta(items: ChatItem[], text: string, seq: number): void {
+function appendDelta(items: ChatItem[], text: string, seq: number, ts: number): void {
   const index = openAssistantIndex(items);
   const open = index >= 0 ? items[index] : undefined;
   if (open?.kind === 'assistant') {
     items[index] = { ...open, text: open.text + text };
     return;
   }
-  items.push({ kind: 'assistant', id: `assistant-${seq}`, text, streaming: true });
+  items.push({ kind: 'assistant', id: `assistant-${seq}`, ts, text, streaming: true });
 }
 
 /** Reasoning belongs to the answer it precedes, so it folds onto the same item. */
-function appendThinking(items: ChatItem[], text: string, seq: number): void {
+function appendThinking(items: ChatItem[], text: string, seq: number, ts: number): void {
   const index = openAssistantIndex(items);
   const open = index >= 0 ? items[index] : undefined;
   if (open?.kind === 'assistant') {
@@ -209,6 +239,7 @@ function appendThinking(items: ChatItem[], text: string, seq: number): void {
   items.push({
     kind: 'assistant',
     id: `assistant-${seq}`,
+    ts,
     text: '',
     streaming: true,
     thinking: text,
@@ -216,29 +247,36 @@ function appendThinking(items: ChatItem[], text: string, seq: number): void {
 }
 
 /** The final text supersedes the deltas that streamed the same block. */
-function finishAssistant(items: ChatItem[], text: string, seq: number): void {
+function finishAssistant(items: ChatItem[], text: string, seq: number, ts: number): void {
   const index = openAssistantIndex(items);
   const open = index >= 0 ? items[index] : undefined;
   if (open?.kind === 'assistant') {
     items[index] = { ...open, text, streaming: false };
     return;
   }
-  items.push({ kind: 'assistant', id: `assistant-${seq}`, text, streaming: false });
+  items.push({ kind: 'assistant', id: `assistant-${seq}`, ts, text, streaming: false });
 }
 
 function closeStreaming(items: ChatItem[]): void {
-  const index = openAssistantIndex(items);
-  const open = index >= 0 ? items[index] : undefined;
-  if (open?.kind === 'assistant') items[index] = { ...open, streaming: false };
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const item = items[i];
+    if (item?.kind === 'assistant' && item.streaming) items[i] = { ...item, streaming: false };
+  }
 }
 
 function finishTool(
   items: ChatItem[],
-  toolCallId: string,
-  output: string | undefined,
-  isError: boolean,
+  event: Extract<Event, { type: 'tool_call_finished' }>,
 ): void {
-  const index = items.findIndex((item) => item.kind === 'tool' && item.id === toolCallId);
+  const index = items.findIndex((item) => item.kind === 'tool' && item.id === event.toolCallId);
   const tool = index >= 0 ? items[index] : undefined;
-  if (tool?.kind === 'tool') items[index] = { ...tool, output, isError, done: true };
+  if (tool?.kind !== 'tool') return;
+  items[index] = {
+    ...tool,
+    output: event.output,
+    isError: event.isError,
+    done: true,
+    finishedAt: event.ts,
+    outputTruncated: event.outputTruncated,
+  };
 }

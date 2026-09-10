@@ -1,7 +1,7 @@
 'use client';
 
-import { LoaderCircle } from 'lucide-react';
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { Check, Copy, LoaderCircle } from 'lucide-react';
+import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 
 /** Shared with the links that have to look like an IconButton. */
@@ -47,6 +47,34 @@ export function DiffStat({
       <span className="text-success">+{added}</span>
       <span className="text-danger">−{removed}</span>
     </span>
+  );
+}
+
+/** Copies `text` and shows a tick for a moment, as the code block and tool output both need. */
+export function CopyButton({ text, className }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
+  return (
+    <button
+      onClick={() => {
+        void navigator.clipboard?.writeText(text);
+        setCopied(true);
+      }}
+      aria-label="Copy"
+      title={copied ? 'Copied' : 'Copy'}
+      className={cn(
+        'flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:text-fg',
+        className,
+      )}
+    >
+      {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
+    </button>
   );
 }
 

@@ -28,6 +28,11 @@ export function ChatPane({ client, threadId, onShowFiles, onAddProject }: Props)
   // Unknown until the auth environment answers; do not tell the user to connect before then.
   const authKnown = useAuthStore((state) => state.auth !== undefined);
   const [error, setError] = useState<string | null>(null);
+  // A stop takes a moment to land; the button and the work fold say so until the turn ends.
+  // Remembering which turn it was asked for is what clears the flag when that turn ends.
+  const [stopRequestedFor, setStopRequestedFor] = useState<string | null>(null);
+  const currentTurn = `${threadId}:${thread.turns.length}`;
+  const stopping = thread.turnActive && stopRequestedFor === currentTurn;
 
   const connected = Boolean(client && threadId);
   // Claude's login is machine-level, so a prompt needs it as much as it needs the socket.
@@ -60,6 +65,7 @@ export function ChatPane({ client, threadId, onShowFiles, onAddProject }: Props)
     <Composer
       disabled={!canSend}
       turnActive={thread.turnActive}
+      stopping={stopping}
       placeholder={
         !authKnown
           ? 'Checking Claude…'
@@ -70,7 +76,11 @@ export function ChatPane({ client, threadId, onShowFiles, onAddProject }: Props)
               : 'Choose a project above to start a thread'
       }
       onSend={send}
-      onStop={() => client && threadId && guard(() => client.send({ type: 'stop_turn', threadId }))}
+      onStop={() => {
+        if (!client || !threadId) return;
+        setStopRequestedFor(currentTurn);
+        guard(() => client.send({ type: 'stop_turn', threadId }));
+      }}
     />
   );
   const errorLine = error ? <div className="text-xs text-danger">{error}</div> : null;
@@ -102,8 +112,11 @@ export function ChatPane({ client, threadId, onShowFiles, onAddProject }: Props)
     <div className="flex min-h-0 flex-1 flex-col">
       <MessageList
         items={thread.items}
+        turns={thread.turns}
         permissions={thread.permissions}
         connected={connected}
+        turnActive={thread.turnActive}
+        stopping={stopping}
         onAnswer={answer}
         onShowFiles={onShowFiles}
       />

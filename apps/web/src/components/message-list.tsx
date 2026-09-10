@@ -1,137 +1,219 @@
 'use client';
 
 import type { PermissionDecision } from '@agent-console/contracts';
-import { ChevronDown, ChevronRight, CircleAlert, FileDiff } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { cn } from '@/lib/cn';
-import type { ChatItem, PendingPermission } from '@/store/thread-state';
+import { ArrowDown, CircleAlert, FileDiff } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { formatCost, formatTokens } from '@/lib/format';
+import {
+  groupTurns,
+  nestTools,
+  type ErrorItem,
+  type SummaryItem,
+  type TurnGroup,
+} from '@/lib/turn-groups';
+import type { ChatItem, PendingPermission, Turn } from '@/store/thread-state';
+import { AssistantMessage } from './assistant-message';
 import { PermissionCard } from './permission-card';
-import { ToolCallRow } from './tool-call-row';
+import { TurnWork } from './turn-work';
 import { DiffStat, EmptyState } from './ui';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 type Props = {
   items: ChatItem[];
+  turns: Turn[];
   permissions: PendingPermission[];
   connected: boolean;
+  turnActive: boolean;
+  /** The user pressed Stop and the turn has not ended yet. */
+  stopping: boolean;
   onAnswer(requestId: string, decision: PermissionDecision): void;
   onShowFiles(turnIndex: number): void;
 };
 
-export function MessageList({ items, permissions, connected, onAnswer, onShowFiles }: Props) {
+/** Below this many pixels from the foot, new content should keep scrolling itself into view. */
+const STICK_THRESHOLD = 80;
+
+export function MessageList({
+  items,
+  turns,
+  permissions,
+  connected,
+  turnActive,
+  stopping,
+  onAnswer,
+  onShowFiles,
+}: Props) {
   const scroller = useRef<HTMLDivElement>(null);
+  const [pinned, setPinned] = useState(true);
+  const groups = useMemo(() => groupTurns(items, turns), [items, turns]);
 
   useEffect(() => {
     const element = scroller.current;
-    if (element) element.scrollTop = element.scrollHeight;
-  }, [items, permissions]);
+    if (element && pinned) element.scrollTop = element.scrollHeight;
+  }, [items, permissions, pinned]);
 
   return (
-    <div ref={scroller} className="min-h-0 flex-1 overflow-auto px-4 py-4">
-      {/* Same column width as the composer below it. */}
-      <div className="mx-auto max-w-3xl space-y-3">
-        {items.length === 0 ? (
-          <EmptyState>
-            {connected ? 'Send a prompt to start a turn.' : 'Open a repository to start chatting.'}
-          </EmptyState>
-        ) : null}
-
-        {items.map((item) => (
-          <Message key={item.id} item={item} onShowFiles={onShowFiles} />
-        ))}
-
-        {permissions.map((permission) => (
-          <PermissionCard key={permission.requestId} permission={permission} onAnswer={onAnswer} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Message({ item, onShowFiles }: { item: ChatItem; onShowFiles(turn: number): void }) {
-  switch (item.kind) {
-    case 'user':
-      return (
-        <div className="flex justify-end">
-          <div className="max-w-[80%] rounded-2xl bg-raised p-3 whitespace-pre-wrap">
-            {item.text}
-          </div>
-        </div>
-      );
-
-    case 'assistant':
-      return (
-        <div className="w-full min-w-0 space-y-1.5">
-          {item.thinking ? (
-            <ThinkingBlock text={item.thinking} live={item.streaming && item.text === ''} />
-          ) : null}
-          <div className="prose-chat leading-relaxed text-fg/85">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
-            {item.streaming ? (
-              <span className="ml-0.5 animate-pulse text-muted-foreground">▍</span>
-            ) : null}
-          </div>
-        </div>
-      );
-
-    case 'tool':
-      return <ToolCallRow item={item} />;
-
-    case 'summary':
-      return (
-        <div className="rounded-lg bg-white/4">
-          <div className="flex items-center justify-between gap-2 px-3 py-2">
-            <div className="flex min-w-0 items-center gap-x-3 text-xs font-medium">
-              <span>
-                {item.files} changed file{item.files === 1 ? '' : 's'}
-              </span>
-              <DiffStat added={item.added} removed={item.removed} className="text-xs" />
-            </div>
-            <button
-              onClick={() => onShowFiles(item.turnIndex)}
-              className="flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-white/8 hover:text-fg"
-            >
-              <FileDiff className="size-3" />
-              Show files
-            </button>
-          </div>
-        </div>
-      );
-
-    case 'error':
-      return (
-        <div className="flex items-start gap-2 rounded-lg border border-danger/25 bg-danger/6 px-3 py-2 text-xs text-danger">
-          <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
-          <span>
-            {item.message}
-            {item.code ? <span className="text-muted-foreground"> ({item.code})</span> : null}
-          </span>
-        </div>
-      );
-  }
-}
-
-/** Collapsed by default, but self-opens while the reasoning is all there is to show. */
-function ThinkingBlock({ text, live }: { text: string; live: boolean }) {
-  const [override, setOverride] = useState<boolean | null>(null);
-  const open = override ?? live;
-
-  return (
-    <div>
-      <button
-        onClick={() => setOverride(!open)}
-        className="flex min-h-6 cursor-pointer items-center gap-1 rounded-md px-0.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-white/5"
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={scroller}
+        onScroll={() => {
+          const element = scroller.current;
+          if (!element) return;
+          const gap = element.scrollHeight - element.scrollTop - element.clientHeight;
+          setPinned(gap < STICK_THRESHOLD);
+        }}
+        className="min-h-0 flex-1 overflow-auto px-4 py-4"
       >
-        <span className={cn(live && 'animate-pulse')}>Thinking</span>
-        {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-      </button>
+        {/* Same column width as the composer below it. */}
+        <div className="mx-auto max-w-3xl space-y-6">
+          {items.length === 0 ? (
+            <EmptyState>
+              {connected
+                ? 'Send a prompt to start a turn.'
+                : 'Open a repository to start chatting.'}
+            </EmptyState>
+          ) : null}
 
-      {open ? (
-        <div className="mt-1 rounded-lg border border-line bg-raised px-2.5 py-2 text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
-          {text}
+          {groups.map((group, index) => (
+            <TurnGroupView
+              key={group.prompt?.id ?? `legacy-${index}`}
+              group={group}
+              active={turnActive && index === groups.length - 1}
+              stopping={stopping}
+              onShowFiles={onShowFiles}
+            />
+          ))}
+
+          {permissions.map((permission) => (
+            <PermissionCard
+              key={permission.requestId}
+              permission={permission}
+              onAnswer={onAnswer}
+            />
+          ))}
         </div>
-      ) : null}
+      </div>
+
+      {pinned ? null : (
+        <button
+          onClick={() => setPinned(true)}
+          className="absolute bottom-3 left-1/2 flex -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full border border-line bg-raised px-3 py-1.5 text-xs text-muted-foreground shadow-lg transition-colors hover:text-fg"
+        >
+          <ArrowDown className="size-3.5" />
+          Jump to latest
+        </button>
+      )}
     </div>
   );
+}
+
+function TurnGroupView({
+  group,
+  active,
+  stopping,
+  onShowFiles,
+}: {
+  group: TurnGroup;
+  active: boolean;
+  stopping: boolean;
+  onShowFiles(turnIndex: number): void;
+}) {
+  const rows = useMemo(() => nestTools(group.work), [group.work]);
+  // A turn that never called a tool has no fold; while it runs, the header is the progress.
+  const showFold = rows.length > 0 || (active && !group.answer);
+
+  return (
+    <div className="space-y-3">
+      {group.prompt ? <UserBubble text={group.prompt.text} ts={group.prompt.ts} /> : null}
+
+      {showFold ? (
+        <TurnWork rows={rows} turn={group.turn} active={active} stopping={stopping} />
+      ) : null}
+
+      {group.answer ? <AssistantMessage item={group.answer} /> : null}
+
+      {group.summary ? <SummaryRow summary={group.summary} onShowFiles={onShowFiles} /> : null}
+
+      {group.errors.map((error) => (
+        <ErrorRow key={error.id} item={error} />
+      ))}
+
+      {active ? null : <TurnFooter turn={group.turn} />}
+    </div>
+  );
+}
+
+function UserBubble({ text, ts }: { text: string; ts: number }) {
+  return (
+    <div className="flex justify-end">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="max-w-[80%] rounded-2xl bg-raised p-3 whitespace-pre-wrap">{text}</div>
+        </TooltipTrigger>
+        <TooltipContent side="left">{clockTime(ts)}</TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
+
+function SummaryRow({
+  summary,
+  onShowFiles,
+}: {
+  summary: SummaryItem;
+  onShowFiles(turnIndex: number): void;
+}) {
+  return (
+    <div className="flex items-center gap-2 px-0.5 text-xs text-muted-foreground">
+      <span>
+        {summary.files} file{summary.files === 1 ? '' : 's'} changed
+      </span>
+      <DiffStat added={summary.added} removed={summary.removed} className="text-xs" />
+      <span className="text-muted-foreground/50">·</span>
+      <button
+        onClick={() => onShowFiles(summary.turnIndex)}
+        className="flex cursor-pointer items-center gap-1 transition-colors hover:text-fg"
+      >
+        <FileDiff className="size-3" />
+        Show files
+      </button>
+    </div>
+  );
+}
+
+/** Tokens and cost for the turn, plus why it ended when that was not "it finished". */
+function TurnFooter({ turn }: { turn: Turn | undefined }) {
+  const usage = turn?.usage;
+  const ending = endingOf(turn?.stopReason);
+  if (!usage && !ending) return null;
+
+  const parts = [
+    usage?.inputTokens === undefined ? null : `${formatTokens(usage.inputTokens)} in`,
+    usage?.outputTokens === undefined ? null : `${formatTokens(usage.outputTokens)} out`,
+    usage?.costUsd === undefined ? null : formatCost(usage.costUsd),
+    ending,
+  ].filter(Boolean);
+
+  return <div className="text-right text-[11px] text-muted-foreground/70">{parts.join(' · ')}</div>;
+}
+
+function ErrorRow({ item }: { item: ErrorItem }) {
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-danger/25 bg-danger/6 px-3 py-2 text-xs text-danger">
+      <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+      <span>
+        {item.message}
+        {item.code ? <span className="text-muted-foreground"> ({item.code})</span> : null}
+      </span>
+    </div>
+  );
+}
+
+function endingOf(stopReason: string | undefined): string | null {
+  if (!stopReason || stopReason === 'end_turn') return null;
+  return stopReason === 'stopped' ? 'Stopped' : 'Error';
+}
+
+function clockTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }

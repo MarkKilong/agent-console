@@ -26,7 +26,7 @@ describe('foldEvent', () => {
     );
 
     expect(thread.items.filter((item) => item.kind === 'user')).toEqual([
-      { kind: 'user', id: 'user-1', text: 'do the thing' },
+      { kind: 'user', id: 'user-1', ts: 0, text: 'do the thing' },
     ]);
   });
 
@@ -62,6 +62,23 @@ describe('foldEvent', () => {
     });
   });
 
+  it('starts a new assistant message for text that arrives after a tool call', () => {
+    const thread = fold(
+      { type: 'turn_started' },
+      { type: 'thinking_delta', text: 'plan' },
+      { type: 'thinking_finished' },
+      { type: 'tool_call_started', toolCallId: 'c1', name: 'Read', input: {} },
+      { type: 'tool_call_finished', toolCallId: 'c1', isError: false },
+      { type: 'assistant_delta', text: 'done' },
+      { type: 'assistant_message', text: 'done.' },
+    );
+
+    const kinds = thread.items.map((item) => item.kind);
+    expect(kinds).toEqual(['assistant', 'tool', 'assistant']);
+    expect(thread.items[0]).toMatchObject({ thinking: 'plan', text: '', streaming: false });
+    expect(thread.items[2]).toMatchObject({ text: 'done.', streaming: false });
+  });
+
   it('keeps the sub-agent tag on a nested tool call', () => {
     const thread = fold({
       type: 'tool_call_started',
@@ -72,5 +89,57 @@ describe('foldEvent', () => {
     });
 
     expect(thread.items[0]).toMatchObject({ kind: 'tool', parentToolCallId: 'task-1' });
+  });
+
+  it('stamps every item with the timestamp of the event that made it', () => {
+    const thread = fold(
+      { type: 'user_message', text: 'go' },
+      { type: 'turn_started' },
+      { type: 'assistant_delta', text: 'ok' },
+      { type: 'error', message: 'boom' },
+    );
+
+    expect(thread.items.map((item) => item.ts)).toEqual([0, 2, 3]);
+  });
+
+  it('times a tool call and records that its output was cut short', () => {
+    const thread = fold(
+      { type: 'tool_call_started', toolCallId: 'a', name: 'Bash', input: {} },
+      {
+        type: 'tool_call_finished',
+        toolCallId: 'a',
+        output: 'huge',
+        isError: false,
+        outputTruncated: true,
+      },
+    );
+
+    expect(thread.items[0]).toMatchObject({
+      kind: 'tool',
+      ts: 0,
+      finishedAt: 1,
+      done: true,
+      outputTruncated: true,
+    });
+  });
+
+  it('closes the turn with how it ended and what it cost', () => {
+    const thread = fold(
+      { type: 'user_message', text: 'go' },
+      { type: 'turn_started' },
+      {
+        type: 'turn_finished',
+        stopReason: 'stopped',
+        usage: { inputTokens: 120, outputTokens: 8, costUsd: 0.04 },
+      },
+    );
+
+    expect(thread.turnActive).toBe(false);
+    expect(thread.turns[0]).toMatchObject({
+      startedAt: 1,
+      finishedAt: 2,
+      stopReason: 'stopped',
+      usage: { inputTokens: 120, outputTokens: 8, costUsd: 0.04 },
+    });
   });
 });
