@@ -24,6 +24,7 @@ export function createAdapter(config: Config, apiKey?: () => string | undefined)
   }
   return new ClaudeAgentAdapter({
     pathToClaudeCodeExecutable: config.claudeBinary,
+    cwd: config.cwd,
     permissionMode: config.permissionMode as PermissionMode,
     apiKey,
   });

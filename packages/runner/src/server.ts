@@ -177,6 +177,13 @@ async function dispatch(
       await reply(socket, command.requestId, async () => ({ threads: registry.list() }));
       return;
 
+    case 'list_models':
+      // An adapter that cannot name its models leaves the client on its own defaults.
+      await reply(socket, command.requestId, async () => ({
+        models: (await deps.adapter.listModels?.()) ?? [],
+      }));
+      return;
+
     case 'auth_status':
       await reply(socket, command.requestId, async () =>
         deps.auth ? deps.auth.status() : AUTH_NOT_APPLICABLE,

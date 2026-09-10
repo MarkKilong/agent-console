@@ -1,6 +1,7 @@
 import type {
   Effort,
   EventBody,
+  ModelInfo,
   PermissionDecision,
   PermissionMode,
 } from '@agent-console/contracts';
@@ -44,6 +45,8 @@ export type TurnResult = {
 export interface AgentAdapter {
   startTurn(params: StartTurnParams, callbacks: TurnCallbacks): Promise<TurnResult>;
   stop(threadId: string): void;
+  /** The models this harness offers; absent when it cannot say, and the server answers empty. */
+  listModels?(): Promise<ModelInfo[]>;
   /** Releases whatever the adapter holds (a subprocess, say) when the runner shuts down. */
   close?(): Promise<void> | void;
 }

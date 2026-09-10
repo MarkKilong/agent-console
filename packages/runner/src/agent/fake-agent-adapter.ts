@@ -1,6 +1,20 @@
+import type { ModelInfo } from '@agent-console/contracts';
 import type { AgentAdapter, StartTurnParams, TurnCallbacks, TurnResult } from './agent-adapter.js';
 
 let lastParams: StartTurnParams | undefined;
+
+/** Two fixed rows — one with effort levels, one without — so the picker cases are testable. */
+const FAKE_MODELS: ModelInfo[] = [
+  {
+    id: 'fake-smart',
+    resolvedId: 'fake-smart-1',
+    name: 'Fake Smart',
+    description: 'Fake Smart · Thinks it over',
+    effortLevels: ['low', 'high'],
+    fastMode: true,
+  },
+  { id: 'fake-quick', name: 'Fake Quick', description: 'Fake Quick · Answers at once' },
+];
 
 /** What the last fake turn was handed, so tests can assert what the server threaded through. */
 export function lastFakeTurnParams(): StartTurnParams | undefined {
@@ -103,6 +117,10 @@ export class FakeAgentAdapter implements AgentAdapter {
       usage: { inputTokens: 10, outputTokens: 20 },
     });
     return { sessionId: `fake-session-${threadId}` };
+  }
+
+  async listModels(): Promise<ModelInfo[]> {
+    return FAKE_MODELS;
   }
 
   stop(threadId: string): void {

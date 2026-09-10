@@ -268,6 +268,26 @@ describe('request/response commands', () => {
     client.close();
   }, 15000);
 
+  it('lists the models the adapter reports', async () => {
+    const client = await connect(server.port, 'test-token');
+
+    client.send({ type: 'list_models', requestId: 'r-models' });
+    const listed = await client.waitForResponse('r-models');
+    expect(listed.ok && 'models' in listed.data && listed.data.models).toEqual([
+      {
+        id: 'fake-smart',
+        resolvedId: 'fake-smart-1',
+        name: 'Fake Smart',
+        description: 'Fake Smart · Thinks it over',
+        effortLevels: ['low', 'high'],
+        fastMode: true,
+      },
+      { id: 'fake-quick', name: 'Fake Quick', description: 'Fake Quick · Answers at once' },
+    ]);
+
+    client.close();
+  }, 15000);
+
   it('lists threads a previous runner persisted, newest first', async () => {
     const client = await connect(server.port, 'test-token');
     await runTurn(client, 't1', 'first prompt');

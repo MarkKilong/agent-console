@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EffortSchema } from './commands.js';
 import { DiffFileSchema } from './events.js';
 
 export const ListFilesDataSchema = z.object({
@@ -34,6 +35,25 @@ export const ListThreadsDataSchema = z.object({
 });
 export type ListThreadsData = z.infer<typeof ListThreadsDataSchema>;
 
+/** One model the agent CLI reports as available; the catalogue is never hard-coded. */
+export const ModelInfoSchema = z.object({
+  /** What `send_prompt` sends as `model`: an alias like `sonnet` or an explicit id. */
+  id: z.string(),
+  /** The wire id the alias resolves to, so a persisted explicit id can match its row. */
+  resolvedId: z.string().optional(),
+  name: z.string(),
+  description: z.string(),
+  /** Absent when the model reports no effort levels at all. */
+  effortLevels: z.array(EffortSchema).optional(),
+  fastMode: z.boolean().optional(),
+});
+export type ModelInfo = z.infer<typeof ModelInfoSchema>;
+
+export const ListModelsDataSchema = z.object({
+  models: z.array(ModelInfoSchema),
+});
+export type ListModelsData = z.infer<typeof ListModelsDataSchema>;
+
 /** What the runner knows about the Claude login inside its environment. */
 export const AuthStatusDataSchema = z.object({
   loggedIn: z.boolean(),
@@ -65,6 +85,7 @@ export const ResponseDataSchema = z.union([
   ReadFileDataSchema,
   GetDiffDataSchema,
   ListThreadsDataSchema,
+  ListModelsDataSchema,
   AuthStatusDataSchema,
   AuthLoginStartDataSchema,
   OkDataSchema,

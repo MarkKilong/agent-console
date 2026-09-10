@@ -34,6 +34,7 @@ export const CommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('read_file'), requestId, path: z.string().min(1) }),
   z.object({ type: z.literal('get_diff'), requestId, threadId: threadId.optional() }),
   z.object({ type: z.literal('list_threads'), requestId }),
+  z.object({ type: z.literal('list_models'), requestId }),
   z.object({
     type: z.literal('subscribe'),
     threadId,

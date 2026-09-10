@@ -1,14 +1,18 @@
 import {
   query,
+  type ModelInfo as SdkModelInfo,
   type Options,
   type PermissionMode,
   type SDKMessage,
+  type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { Usage } from '@agent-console/contracts';
+import type { Effort, ModelInfo, Usage } from '@agent-console/contracts';
 import type { AgentAdapter, StartTurnParams, TurnCallbacks, TurnResult } from './agent-adapter.js';
 
 export type ClaudeAgentAdapterOptions = {
   pathToClaudeCodeExecutable: string;
+  /** Where a model probe runs; turns use the cwd their thread was started with. */
+  cwd: string;
   permissionMode?: PermissionMode;
   /** Extra variables layered onto process.env for the Claude Code subprocess. */
   env?: Record<string, string>;
@@ -18,6 +22,7 @@ export type ClaudeAgentAdapterOptions = {
 
 export class ClaudeAgentAdapter implements AgentAdapter {
   private readonly aborts = new Map<string, AbortController>();
+  private models: Promise<ModelInfo[]> | undefined;
 
   constructor(private readonly options: ClaudeAgentAdapterOptions) {}
 
@@ -25,7 +30,6 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     const abortController = new AbortController();
     this.aborts.set(params.threadId, abortController);
 
-    const apiKey = this.options.apiKey?.();
     const options: Options = {
       abortController,
       cwd: params.cwd,
@@ -36,11 +40,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       includePartialMessages: true,
       // The CLI omits thinking text by default on Claude 5; 'summarized' streams it back.
       thinking: { type: 'adaptive', display: 'summarized' },
-      env: {
-        ...process.env,
-        ...this.options.env,
-        ...(apiKey ? { ANTHROPIC_API_KEY: apiKey } : {}),
-      },
+      env: this.env(),
       canUseTool: async (toolName, input) => {
         const decision = await callbacks.requestPermission({ toolName, input });
         return decision === 'allow'
@@ -79,9 +79,71 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     return sessionId ? { sessionId } : {};
   }
 
+  /**
+   * The CLI is the catalogue. Cached for the process lifetime — the list only moves
+   * with the CLI version, and the runner is restarted for that. A failure is not
+   * cached, so asking again after a login can succeed.
+   */
+  async listModels(): Promise<ModelInfo[]> {
+    this.models ??= this.probeModels();
+    try {
+      return await this.models;
+    } catch (error) {
+      this.models = undefined;
+      throw error;
+    }
+  }
+
   stop(threadId: string): void {
     this.aborts.get(threadId)?.abort();
   }
+
+  private async probeModels(): Promise<ModelInfo[]> {
+    // Streaming-input mode with a prompt that never yields: the session comes up and
+    // answers control requests without ever running a turn.
+    const session = query({
+      prompt: IDLE_PROMPT,
+      options: {
+        cwd: this.options.cwd,
+        pathToClaudeCodeExecutable: this.options.pathToClaudeCodeExecutable,
+        env: this.env(),
+      },
+    });
+    try {
+      return (await session.supportedModels()).map(toModelInfo);
+    } finally {
+      session.close();
+    }
+  }
+
+  /** Read per call: the key can be set or cleared while the runner is up. */
+  private env(): Record<string, string | undefined> {
+    const apiKey = this.options.apiKey?.();
+    return {
+      ...process.env,
+      ...this.options.env,
+      ...(apiKey ? { ANTHROPIC_API_KEY: apiKey } : {}),
+    };
+  }
+}
+
+/** Streaming input that never produces a message, so the probe session starts no turn. */
+const IDLE_PROMPT: AsyncIterable<SDKUserMessage> = {
+  [Symbol.asyncIterator]: () => ({
+    next: () => new Promise<IteratorResult<SDKUserMessage>>(() => {}),
+    return: async () => ({ done: true, value: undefined }),
+  }),
+};
+
+function toModelInfo(model: SdkModelInfo): ModelInfo {
+  return {
+    id: model.value,
+    resolvedId: model.resolvedModel,
+    name: model.displayName,
+    description: model.description,
+    effortLevels: model.supportedEffortLevels as Effort[] | undefined,
+    fastMode: model.supportsFastMode,
+  };
 }
 
 function sessionIdOf(message: SDKMessage): string | undefined {
