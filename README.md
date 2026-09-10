@@ -115,13 +115,24 @@ answer_permission  →
 from its in-memory log, then live-tails. One turn runs per thread at a time; a `send_prompt`
 during an active turn produces an `error` event with code `turn_active`.
 
+### Repositories are discovered, not declared
+
+The workspace is whatever folder was opened; the runner works out the git situation itself.
+It looks for the repository enclosing the workspace, if any, and for repositories nested up to
+three levels below it (skipping `node_modules`). A folder holding several projects diffs each
+one under its own prefix (`project_a/src/index.ts`); a project sitting inside a larger checkout
+is scoped to itself with a pathspec, so the rest of the checkout is never staged; a nested
+repository is excluded from the enclosing one's diff; a plain folder gets no diff and no error.
+The `turn_started` branch is the enclosing repository's, or the only nested one's.
+
 ### Diffs are per turn
 
-Before a turn starts the runner hashes the whole working tree — untracked files included,
-`.gitignore` respected — into a git tree object, using a throwaway `GIT_INDEX_FILE` so the
-repository's own index and HEAD are never touched. It hashes it again when the turn ends and
-diffs the two trees, so `diff_ready` carries only what _that_ turn changed: uncommitted work
-from before the environment was opened, or from an earlier turn, never leaks into it. Renames
+Before a turn starts the runner hashes each repository's share of the working tree — untracked
+files included, `.gitignore` respected — into a git tree object, using a throwaway
+`GIT_INDEX_FILE` so the repository's own index and HEAD are never touched. It hashes again when
+the turn ends and diffs the two trees, so `diff_ready` carries only what _that_ turn changed:
+uncommitted work from before the environment was opened, or from an earlier turn, never leaks
+into it. A repository the agent created during the turn shows up from the next turn on. Renames
 are detected (`status: 'renamed'` plus `oldPath`), binary files get a status with an empty
 `patch`, and tree-to-tree diffs read blobs that git already normalized, so `core.autocrlf`
 cannot make every line look changed.

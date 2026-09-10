@@ -1,8 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import type { PermissionDecision } from '@agent-console/contracts';
 import type { AgentAdapter, PermissionRequest, TurnOptions } from './agent/agent-adapter.js';
-import { diffTrees, snapshotTree } from './git/diff.js';
-import { currentBranch } from './git/exec.js';
+import {
+  diffWorkspace,
+  discoverRepos,
+  snapshotWorkspace,
+  workspaceBranch,
+  type Repo,
+  type Snapshot,
+} from './git/workspace.js';
 import type { ActiveTurn, ThreadRegistry } from './threads.js';
 
 export type TurnDeps = {
@@ -36,8 +42,10 @@ export function startTurn(
 
 class Turn implements ActiveTurn {
   private readonly pending = new Map<string, (decision: PermissionDecision) => void>();
+  /** Found once when the turn starts; the same repositories are diffed when it ends. */
+  private repos: Repo[] = [];
   /** Working tree as it looked when the turn started; the diff is measured against it. */
-  private baseTree: string | undefined;
+  private baseSnapshot: Snapshot | undefined;
   /** Set by stop(); a stop landing before the adapter starts must not be lost. */
   private stopped = false;
   /** The adapter only knows about the turn once startTurn has been called. */
@@ -51,12 +59,13 @@ class Turn implements ActiveTurn {
 
   async run(prompt: string): Promise<void> {
     const { registry, adapter, cwd } = this.deps;
-    // One git call per turn: the card in the sidebar shows where the work happened.
-    const branch = await currentBranch(cwd);
+    this.repos = await discoverRepos(cwd);
+    // The card in the sidebar shows where the work happened.
+    const branch = await workspaceBranch(this.repos);
     if (branch) registry.setBranch(this.threadId, branch);
     registry.append(this.threadId, { type: 'turn_started', ...(branch ? { branch } : {}) });
-    this.baseTree = await this.snapshot();
-    registry.setBaseTree(this.threadId, this.baseTree);
+    this.baseSnapshot = await this.snapshot();
+    registry.setBaseSnapshot(this.threadId, this.baseSnapshot);
 
     try {
       if (this.stopped) {
@@ -132,10 +141,10 @@ class Turn implements ActiveTurn {
   }
 
   private async emitDiff(): Promise<void> {
-    const before = this.baseTree;
+    const before = this.baseSnapshot;
     const after = before ? await this.snapshot() : undefined;
     try {
-      const files = before && after ? await diffTrees(this.deps.cwd, before, after) : [];
+      const files = before && after ? await diffWorkspace(this.repos, before, after) : [];
       this.deps.registry.append(this.threadId, { type: 'diff_ready', files });
     } catch (error) {
       this.deps.registry.append(this.threadId, {
@@ -146,10 +155,11 @@ class Turn implements ActiveTurn {
     }
   }
 
-  /** Undefined outside a git repository, or if git could not hash the tree. */
-  private async snapshot(): Promise<string | undefined> {
+  /** Undefined when no repository overlaps the workspace, or if git could not hash a tree. */
+  private async snapshot(): Promise<Snapshot | undefined> {
     try {
-      return await snapshotTree(this.deps.cwd);
+      const snapshot = await snapshotWorkspace(this.repos);
+      return Object.keys(snapshot).length ? snapshot : undefined;
     } catch (error) {
       this.deps.registry.append(this.threadId, {
         type: 'error',
