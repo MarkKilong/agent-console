@@ -150,6 +150,15 @@ export class LocalProvider implements EnvironmentProvider {
       throw error;
     }
     environment.handle.status = 'running';
+
+    // A runner that dies later — crashed, or killed by hand — must not be handed out
+    // again; the next create for its folder spawns afresh. kill() clears `child` first,
+    // so a stop or destroy keeps the status it chose.
+    child.once('exit', () => {
+      if (environment.child !== child) return;
+      environment.child = undefined;
+      environment.handle.status = 'stopped';
+    });
   }
 
   private kill(environment: Environment): void {
