@@ -4,21 +4,18 @@ import { LoaderCircle } from 'lucide-react';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 
+/** Shared with the links that have to look like an IconButton. */
+export const ICON_BUTTON_CLASS = cn(
+  'flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors',
+  'hover:bg-white/8 hover:text-fg disabled:cursor-not-allowed disabled:opacity-40',
+);
+
 /** Square ghost icon button, T3's `size="icon-sm" variant="ghost"`. */
 export function IconButton({
   className,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { 'aria-label': string }) {
-  return (
-    <button
-      {...props}
-      className={cn(
-        'flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors',
-        'hover:bg-white/8 hover:text-fg disabled:cursor-not-allowed disabled:opacity-40',
-        className,
-      )}
-    />
-  );
+  return <button {...props} className={cn(ICON_BUTTON_CLASS, className)} />;
 }
 
 export function PaneHeader({ children }: { children: ReactNode }) {

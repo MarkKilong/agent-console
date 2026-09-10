@@ -1,6 +1,5 @@
 import {
   ServerMessageSchema,
-  type AuthLoginMode,
   type Command,
   type Event,
   type ResponseData,
@@ -15,7 +14,7 @@ export type RequestCommand =
   | { type: 'get_diff'; threadId?: string }
   | { type: 'list_threads' }
   | { type: 'auth_status' }
-  | { type: 'auth_login_start'; mode: AuthLoginMode }
+  | { type: 'auth_login_start' }
   | { type: 'auth_login_code'; code: string }
   | { type: 'auth_logout' }
   | { type: 'auth_set_api_key'; key: string }

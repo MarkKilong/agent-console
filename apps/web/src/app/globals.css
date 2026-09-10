@@ -235,3 +235,20 @@ body {
     @apply font-sans;
   }
 }
+
+/* Folder-tab shoulder: a concave quarter circle sweeping from the tab's edge onto the card. */
+.folder-tab::after {
+  content: '';
+  position: absolute;
+  right: -12px;
+  bottom: 0;
+  width: 12px;
+  height: 12px;
+  background: radial-gradient(
+    circle at 100% 0,
+    transparent 11px,
+    var(--color-line) 11px,
+    var(--color-line) 12px,
+    var(--color-panel) 12px
+  );
+}

@@ -14,6 +14,7 @@ import {
   SquarePen,
   X,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useState, type SyntheticEvent } from 'react';
 import { cn } from '@/lib/cn';
 import { closeProject, openProject } from '@/lib/open-project';
@@ -24,7 +25,7 @@ import { useConsoleStore } from '@/store/use-console-store';
 import { useLayoutStore } from '@/store/use-layout-store';
 import { useActiveProject, useProjectsStore, type Project } from '@/store/use-projects-store';
 import { ClaudeMark } from './claude-mark';
-import { IconButton, Spinner } from './ui';
+import { ICON_BUTTON_CLASS, IconButton, Spinner } from './ui';
 import { Button } from './ui/button';
 import {
   DropdownMenu,
@@ -39,10 +40,9 @@ type Props = {
   /** Reported by the shell when the persisted project could not be reopened. */
   error: string | null;
   onAddProject(): void;
-  onOpenConnection(): void;
 };
 
-export function ThreadsSidebar({ client, error, onAddProject, onOpenConnection }: Props) {
+export function ThreadsSidebar({ client, error, onAddProject }: Props) {
   const [search, setSearch] = useState('');
 
   const toggleSidebar = useLayoutStore((state) => state.toggleSidebar);
@@ -113,13 +113,14 @@ export function ThreadsSidebar({ client, error, onAddProject, onOpenConnection }
       </div>
 
       <div className="flex h-11 shrink-0 items-center border-t border-line px-2">
-        <IconButton
-          onClick={onOpenConnection}
-          aria-label="Claude connection"
-          title="Claude connection"
+        <Link
+          href="/settings/providers"
+          aria-label="Settings"
+          title="Settings"
+          className={ICON_BUTTON_CLASS}
         >
           <Settings className="size-4" />
-        </IconButton>
+        </Link>
       </div>
     </div>
   );

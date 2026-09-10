@@ -5,11 +5,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { closeProject, openProject } from '@/lib/open-project';
 import { RunnerClient } from '@/lib/runner-client';
+import { useAuthStore } from '@/store/use-auth-store';
 import { useComposerSettings } from '@/store/use-composer-settings';
 import { useConsoleStore } from '@/store/use-console-store';
 import { useLayoutStore } from '@/store/use-layout-store';
 import { useActiveProject, useProjectsStore } from '@/store/use-projects-store';
-import { AddProjectDialog, type DialogMode } from './add-project-dialog';
+import { AddProjectDialog } from './add-project-dialog';
 import { ChatPane } from './chat-pane';
 import { DiffPane } from './diff-pane';
 import { ThreadsSidebar } from './threads-sidebar';
@@ -25,7 +26,7 @@ export function AppShell() {
   const sidebarOpen = useLayoutStore((state) => state.sidebarOpen);
   const rightOpen = useLayoutStore((state) => state.rightOpen);
 
-  const [dialog, setDialog] = useState<DialogMode | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
   const [reopenError, setReopenError] = useState<string | null>(null);
 
   // Tagged with its thread so switching threads drops the selection by derivation.
@@ -39,6 +40,8 @@ export function AppShell() {
   useEffect(() => {
     // Strict mode mounts twice; only the surviving run may open the project.
     let cancelled = false;
+    // Claude's login is machine-level, so the composer can know about it with no project open.
+    void useAuthStore.getState().ensure();
     void (async () => {
       await Promise.all([
         useProjectsStore.persist.rehydrate(),
@@ -75,8 +78,7 @@ export function AppShell() {
     return () => client?.dispose();
   }, [client]);
 
-  // The runner survives the browser, so ask it for the threads it already has —
-  // and for whether Claude is logged in inside that environment.
+  // The runner survives the browser, so ask it for the threads it already has.
   useEffect(() => {
     if (!client || status !== 'open') return;
     let live = true;
@@ -86,7 +88,6 @@ export function AppShell() {
         if (live && 'threads' in data) useConsoleStore.getState().hydrateThreads(data.threads);
       })
       .catch(() => {});
-    void useConsoleStore.getState().refreshAuth(client);
     return () => {
       live = false;
     };
@@ -115,8 +116,7 @@ export function AppShell() {
             <ThreadsSidebar
               client={client}
               error={reopenError}
-              onAddProject={() => setDialog('project')}
-              onOpenConnection={() => setDialog('connection')}
+              onAddProject={() => setAddOpen(true)}
             />
           </Panel>
           <Separator className="w-px" />
@@ -129,7 +129,7 @@ export function AppShell() {
           client={client}
           threadId={activeThreadId}
           onShowFiles={selectTurn}
-          onAddProject={() => setDialog('project')}
+          onAddProject={() => setAddOpen(true)}
         />
       </Panel>
 
@@ -146,7 +146,7 @@ export function AppShell() {
         </>
       ) : null}
 
-      <AddProjectDialog client={client} mode={dialog} onClose={() => setDialog(null)} />
+      <AddProjectDialog open={addOpen} onClose={() => setAddOpen(false)} />
     </Group>
   );
 }

@@ -2,8 +2,10 @@
 
 import type { PermissionDecision } from '@agent-console/contracts';
 import { Plus, Sparkles } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 import type { RunnerClient } from '@/lib/runner-client';
+import { isClaudeConnected, useAuthStore } from '@/store/use-auth-store';
 import { useComposerSettings } from '@/store/use-composer-settings';
 import { useConsoleStore, useThread } from '@/store/use-console-store';
 import { useActiveProject } from '@/store/use-projects-store';
@@ -22,9 +24,14 @@ export function ChatPane({ client, threadId, onShowFiles, onAddProject }: Props)
   const project = useActiveProject();
   const notePrompt = useConsoleStore((state) => state.notePrompt);
   const thread = useThread(threadId);
+  const claudeConnected = useAuthStore(isClaudeConnected);
+  // Unknown until the auth environment answers; do not tell the user to connect before then.
+  const authKnown = useAuthStore((state) => state.auth !== undefined);
   const [error, setError] = useState<string | null>(null);
 
   const connected = Boolean(client && threadId);
+  // Claude's login is machine-level, so a prompt needs it as much as it needs the socket.
+  const canSend = connected && claudeConnected;
 
   function guard(action: () => void) {
     try {
@@ -51,12 +58,16 @@ export function ChatPane({ client, threadId, onShowFiles, onAddProject }: Props)
 
   const composer = (
     <Composer
-      disabled={!connected}
+      disabled={!canSend}
       turnActive={thread.turnActive}
       placeholder={
-        project
-          ? 'Ask for changes, send follow-ups, or attach images'
-          : 'Choose a project above to start a thread'
+        !authKnown
+          ? 'Checking Claude…'
+          : !claudeConnected
+            ? 'Connect Claude in Settings to start'
+            : project
+              ? 'Ask for changes, send follow-ups, or attach images'
+              : 'Choose a project above to start a thread'
       }
       onSend={send}
       onStop={() => client && threadId && guard(() => client.send({ type: 'stop_turn', threadId }))}
@@ -75,6 +86,14 @@ export function ChatPane({ client, threadId, onShowFiles, onAddProject }: Props)
         )}
         {errorLine}
         <div className="w-full max-w-3xl">{composer}</div>
+        {!authKnown || claudeConnected ? null : (
+          <Link
+            href="/settings/providers"
+            className="text-xs text-muted-foreground underline-offset-4 hover:text-fg hover:underline"
+          >
+            Open Settings
+          </Link>
+        )}
       </div>
     );
   }

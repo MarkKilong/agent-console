@@ -1,6 +1,6 @@
-import type { AuthLoginMode, AuthStatusData, Event, ThreadSummary } from '@agent-console/contracts';
+import type { Event, ThreadSummary } from '@agent-console/contracts';
 import { create } from 'zustand';
-import type { ConnectionStatus, RunnerClient } from '@/lib/runner-client';
+import type { ConnectionStatus } from '@/lib/runner-client';
 // Aliased rather than relative so the tests' NodeNext resolution finds it too.
 import { emptyThread, foldEvent, type ThreadState } from '@/store/thread-state';
 
@@ -21,15 +21,8 @@ export type ThreadMeta = {
   createdAt: number;
 };
 
-/** Claude's login inside the open environment, plus a login waiting for its code. */
-export type AuthState = {
-  status?: AuthStatusData;
-  login?: { mode: AuthLoginMode; authUrl: string };
-};
-
 type ConsoleStore = {
   environment: EnvironmentInfo | null;
-  auth: AuthState;
   /** Newest thread first. */
   threadOrder: string[];
   threadMeta: Record<string, ThreadMeta>;
@@ -44,30 +37,21 @@ type ConsoleStore = {
   selectThread(threadId: string): void;
   applyEvent(event: Event): void;
   notePrompt(threadId: string, text: string): void;
-
-  refreshAuth(client: RunnerClient): Promise<void>;
-  startLogin(client: RunnerClient, mode: AuthLoginMode): Promise<void>;
-  submitCode(client: RunnerClient, code: string): Promise<void>;
-  logout(client: RunnerClient): Promise<void>;
-  setApiKey(client: RunnerClient, key: string): Promise<void>;
-  clearApiKey(client: RunnerClient): Promise<void>;
 };
 
-export const useConsoleStore = create<ConsoleStore>((set, get) => ({
+export const useConsoleStore = create<ConsoleStore>((set) => ({
   environment: null,
-  auth: {},
   threadOrder: [],
   threadMeta: {},
   threads: {},
   activeThreadId: null,
 
   openEnvironment: (environment) =>
-    set({ environment: { ...environment, status: 'idle' }, auth: {}, ...freshThread() }),
+    set({ environment: { ...environment, status: 'idle' }, ...freshThread() }),
 
   closeEnvironment: () =>
     set({
       environment: null,
-      auth: {},
       threadOrder: [],
       threadMeta: {},
       threads: {},
@@ -127,44 +111,6 @@ export const useConsoleStore = create<ConsoleStore>((set, get) => ({
   // The prompt itself renders from the runner's `user_message` event, not from here.
   notePrompt: (threadId, text) =>
     set((state) => ({ threadMeta: titled(state.threadMeta, threadId, text) })),
-
-  // Status is advisory: a runner that cannot answer just leaves the card as it was.
-  refreshAuth: async (client) => {
-    try {
-      const data = await client.request({ type: 'auth_status' });
-      if ('loggedIn' in data) set((state) => ({ auth: { ...state.auth, status: data } }));
-    } catch {
-      // Left to the next refresh.
-    }
-  },
-
-  startLogin: async (client, mode) => {
-    const data = await client.request({ type: 'auth_login_start', mode });
-    if (!('authUrl' in data)) throw new Error('The runner did not return an authorization URL');
-    set((state) => ({ auth: { ...state.auth, login: { mode, authUrl: data.authUrl } } }));
-  },
-
-  submitCode: async (client, code) => {
-    await client.request({ type: 'auth_login_code', code });
-    set((state) => ({ auth: { ...state.auth, login: undefined } }));
-    await get().refreshAuth(client);
-  },
-
-  logout: async (client) => {
-    await client.request({ type: 'auth_logout' });
-    set({ auth: {} });
-    await get().refreshAuth(client);
-  },
-
-  setApiKey: async (client, key) => {
-    await client.request({ type: 'auth_set_api_key', key });
-    await get().refreshAuth(client);
-  },
-
-  clearApiKey: async (client) => {
-    await client.request({ type: 'auth_clear_api_key' });
-    await get().refreshAuth(client);
-  },
 }));
 
 export function useThread(threadId: string | null): ThreadState {

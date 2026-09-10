@@ -59,6 +59,9 @@ importers:
       '@agent-console/providers':
         specifier: workspace:*
         version: link:../../packages/providers
+      '@agent-console/runner':
+        specifier: workspace:*
+        version: link:../../packages/runner
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
