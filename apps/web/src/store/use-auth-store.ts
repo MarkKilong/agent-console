@@ -55,7 +55,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     if (!client) return;
     try {
       const data = await client.request({ type: 'auth_status' });
-      if ('loggedIn' in data) set({ auth: data });
+      // `apiKey`, not `loggedIn`: the Codex status answers with one of those too.
+      if ('apiKey' in data) set({ auth: data });
     } catch {
       // Left to the next refresh.
     }

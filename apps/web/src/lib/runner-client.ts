@@ -32,6 +32,11 @@ export type RequestCommand =
   | { type: 'github_login_start' }
   | { type: 'github_login_cancel' }
   | { type: 'github_logout' }
+  | { type: 'codex_auth_status' }
+  | { type: 'codex_login_start' }
+  | { type: 'codex_login_cancel' }
+  | { type: 'codex_logout' }
+  | { type: 'codex_set_api_key'; key: string }
   | { type: 'terminal_open'; shell?: TerminalShell; cols: number; rows: number };
 
 export type RunnerClientOptions = {
