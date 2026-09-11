@@ -12,9 +12,12 @@ export type Project = {
 type ProjectsStore = {
   projects: Project[];
   activeProjectId: string | null;
+  /** The folder the last clone landed in, so the next one is offered the same place. */
+  cloneParent: string | null;
   addProject(repoPath: string, name?: string): Project;
   removeProject(projectId: string): void;
   setActive(projectId: string | null): void;
+  setCloneParent(path: string): void;
 };
 
 export const useProjectsStore = create<ProjectsStore>()(
@@ -22,6 +25,7 @@ export const useProjectsStore = create<ProjectsStore>()(
     (set) => ({
       projects: [],
       activeProjectId: null,
+      cloneParent: null,
 
       addProject: (repoPath, name) => {
         const project: Project = {
@@ -41,6 +45,8 @@ export const useProjectsStore = create<ProjectsStore>()(
         })),
 
       setActive: (projectId) => set({ activeProjectId: projectId }),
+
+      setCloneParent: (path) => set({ cloneParent: path.trim() || null }),
     }),
     // Rehydrated from app-shell, so the server render and the first client render match.
     { name: 'agent-console.projects', skipHydration: true },
