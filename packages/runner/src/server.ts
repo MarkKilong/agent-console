@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server } from 'node:http';
 import {
   PROTOCOL_VERSION,
   type AuthStatusData,
+  type CodexAuthStatusData,
   type Command,
   type DiffFile,
   type Response,
@@ -9,6 +10,7 @@ import {
 import { WebSocketServer, type WebSocket } from 'ws';
 import { createAdapter } from './agent/create-adapter.js';
 import { ClaudeAuth } from './auth/claude-auth.js';
+import { CodexAuth } from './auth/codex-auth.js';
 import { GitHubAuth } from './auth/github-auth.js';
 import type { Config } from './config.js';
 import { listWorkspaceFiles, readWorkspaceFile } from './files.js';
@@ -41,8 +43,17 @@ const AUTH_NOT_APPLICABLE: AuthStatusData = {
   loginPending: false,
 };
 
+/** Answer for environments with no Codex CLI: nothing for the UI to offer. */
+const CODEX_NOT_INSTALLED: CodexAuthStatusData = {
+  installed: false,
+  loggedIn: false,
+  authMethod: 'none',
+  loginPending: false,
+};
+
 type ServerDeps = TurnDeps & {
   auth: ClaudeAuth | undefined;
+  codexAuth: CodexAuth | undefined;
   github: GitHubAuth;
   terminals: TerminalManager;
 };
@@ -55,6 +66,8 @@ export async function startServer(
   auth: ClaudeAuth | undefined = createClaudeAuth(config),
   // Unconditional, unlike Claude's: the device flow needs no CLI, only the data root.
   github: GitHubAuth = new GitHubAuth({ dataDir: config.dataRoot }),
+  // Built whenever a Codex binary resolves, whatever agent this runner itself drives.
+  codexAuth: CodexAuth | undefined = createCodexAuth(config),
 ): Promise<RunnerServer> {
   const githubToken = () => github.token();
   const deps: ServerDeps = {
@@ -62,6 +75,7 @@ export async function startServer(
     adapter: createAdapter(config, () => auth?.apiKey(), githubToken),
     cwd: config.cwd,
     auth,
+    codexAuth,
     github,
     terminals: new TerminalManager(config.cwd, { githubToken }),
   };
@@ -90,6 +104,7 @@ export async function startServer(
     terminalCount: () => deps.terminals.count,
     close: async () => {
       deps.auth?.close();
+      deps.codexAuth?.close();
       deps.github.close();
       deps.registry.stopActiveTurns();
       deps.terminals.closeAll();
@@ -292,6 +307,37 @@ async function dispatch(
       });
       return;
 
+    case 'codex_auth_status':
+      await reply(socket, command.requestId, async () =>
+        deps.codexAuth ? deps.codexAuth.status() : CODEX_NOT_INSTALLED,
+      );
+      return;
+
+    case 'codex_login_start':
+      await reply(socket, command.requestId, () => requireCodexAuth(deps).loginStart());
+      return;
+
+    case 'codex_login_cancel':
+      await reply(socket, command.requestId, async () => {
+        requireCodexAuth(deps).cancel();
+        return { ok: true };
+      });
+      return;
+
+    case 'codex_logout':
+      await reply(socket, command.requestId, async () => {
+        await requireCodexAuth(deps).logout();
+        return { ok: true };
+      });
+      return;
+
+    case 'codex_set_api_key':
+      await reply(socket, command.requestId, async () => {
+        await requireCodexAuth(deps).setApiKey(command.key);
+        return { ok: true };
+      });
+      return;
+
     case 'terminal_open':
       await reply(socket, command.requestId, async () => {
         const opened = deps.terminals.open(command, connection.terminalEvents);
@@ -333,9 +379,20 @@ function createClaudeAuth(config: Config): ClaudeAuth | undefined {
   });
 }
 
+function createCodexAuth(config: Config): CodexAuth | undefined {
+  if (!config.codexBinary) return undefined;
+  // CODEX_HOME, where it is set, travels in process.env untouched.
+  return new CodexAuth({ binary: config.codexBinary, env: process.env });
+}
+
 function requireAuth(deps: ServerDeps): ClaudeAuth {
   if (!deps.auth) throw new Error('This environment has no Claude CLI to log in');
   return deps.auth;
+}
+
+function requireCodexAuth(deps: ServerDeps): CodexAuth {
+  if (!deps.codexAuth) throw new Error('This environment has no Codex CLI to log in');
+  return deps.codexAuth;
 }
 
 /**

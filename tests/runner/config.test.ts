@@ -62,18 +62,21 @@ describe('loadConfig', () => {
     });
   });
 
-  it('ignores CODEX_BINARY for the claude agent', async () => {
+  // The Providers page logs in to Codex through the auth runner, which runs Claude.
+  it('resolves CODEX_BINARY for the claude agent too', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'agent-console-config-'));
     const claude = join(dir, 'claude.exe');
+    const codex = join(dir, 'codex.cmd');
     await writeFile(claude, '', { mode: 0o755 });
+    await writeFile(codex, '', { mode: 0o755 });
 
     const config = loadConfig({
       RUNNER_TOKEN: 'dev',
       CLAUDE_BINARY: claude,
-      CODEX_BINARY: join(tmpdir(), 'no-such-codex.exe'),
+      CODEX_BINARY: codex,
     });
     expect(config.agent).toBe('claude');
-    expect(config.codexBinary).toBeUndefined();
+    expect(config.codexBinary).toBe(codex);
   });
 
   it('shares one data root and hashes the workspace under it', async () => {

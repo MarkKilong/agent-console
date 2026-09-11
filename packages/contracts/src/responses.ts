@@ -95,6 +95,28 @@ export const GithubLoginStartDataSchema = z.object({
 });
 export type GithubLoginStartData = z.infer<typeof GithubLoginStartDataSchema>;
 
+/** What the runner knows about the Codex CLI login inside its environment. */
+export const CodexAuthStatusDataSchema = z.object({
+  /** A Codex binary resolved in this environment; false leaves nothing to offer. */
+  installed: z.boolean(),
+  loggedIn: z.boolean(),
+  authMethod: z.enum(['chatgpt', 'api_key', 'access_token', 'none']),
+  /** A device login is waiting for the user to approve it. */
+  loginPending: z.boolean(),
+  pending: z.object({ userCode: z.string(), verificationUrl: z.string() }).optional(),
+  /** What `codex --version` reports, when it could be read. */
+  version: z.string().optional(),
+  /** Why the last login ended without a session; cleared when the next one starts. */
+  error: z.string().optional(),
+});
+export type CodexAuthStatusData = z.infer<typeof CodexAuthStatusDataSchema>;
+
+export const CodexLoginStartDataSchema = z.object({
+  userCode: z.string(),
+  verificationUrl: z.string(),
+});
+export type CodexLoginStartData = z.infer<typeof CodexLoginStartDataSchema>;
+
 export const TerminalOpenDataSchema = z.object({
   terminalId: z.string(),
   /** What the requested kind resolved to; `powershell` becomes `default` off Windows. */
@@ -117,6 +139,8 @@ export const ResponseDataSchema = z.union([
   AuthLoginStartDataSchema,
   GithubStatusDataSchema,
   GithubLoginStartDataSchema,
+  CodexAuthStatusDataSchema,
+  CodexLoginStartDataSchema,
   TerminalOpenDataSchema,
   OkDataSchema,
 ]);
