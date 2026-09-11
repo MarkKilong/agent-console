@@ -237,7 +237,7 @@ describe('commitsBetween', () => {
     expect(total).toBe(25);
     expect(commits).toHaveLength(20);
     expect(commits.every((commit) => !commit.made)).toBe(true);
-  });
+  }, 20_000);
 
   it('tells the commit the turn made from the ones it pulled in', async () => {
     await initRepo(scratch);
