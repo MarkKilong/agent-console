@@ -5,6 +5,8 @@ import { z } from 'zod';
 
 const MetaSchema = z.object({
   title: z.string(),
+  /** Where the title came from; a model's title is never replaced by a prompt's. */
+  titleSource: z.enum(['prompt', 'model']).optional(),
   agent: z.string(),
   branch: z.string().optional(),
   sessionId: z.string().optional(),

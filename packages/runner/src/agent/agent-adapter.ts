@@ -23,6 +23,8 @@ export type TurnOptions = {
   model?: string;
   effort?: Effort;
   permissionMode?: PermissionMode;
+  /** Model asked to name the thread alongside the turn; the turn itself ignores it. */
+  titleModel?: string;
 };
 
 export type StartTurnParams = TurnOptions & {
@@ -47,6 +49,8 @@ export interface AgentAdapter {
   stop(threadId: string): void;
   /** The models this harness offers; absent when it cannot say, and the server answers empty. */
   listModels?(): Promise<ModelInfo[]>;
+  /** Names a thread after its first prompt; absent when the harness cannot run a one-shot. */
+  title?(prompt: string, model: string): Promise<string>;
   /** Releases whatever the adapter holds (a subprocess, say) when the runner shuts down. */
   close?(): Promise<void> | void;
 }

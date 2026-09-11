@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -126,6 +126,41 @@ describe('a full turn', () => {
       model: 'claude-sonnet-5',
       effort: 'low',
       permissionMode: 'acceptEdits',
+    });
+
+    client.close();
+  }, 15000);
+
+  it('names the thread with the chosen model, and persists where the name came from', async () => {
+    const client = await connect(server.port, 'test-token');
+    client.send({ type: 'subscribe', threadId: 't1' });
+    client.send({
+      type: 'send_prompt',
+      threadId: 't1',
+      text: 'fail-turn please',
+      titleModel: 'fake-quick',
+    });
+
+    const titled = await client.waitForEvent((event) => event.type === 'thread_titled');
+    expect(titled).toMatchObject({ title: 'Fail-turn please' });
+    await expect(lastMeta(config.threadsDir, 't1')).resolves.toMatchObject({
+      title: 'Fail-turn please',
+      titleSource: 'model',
+    });
+
+    client.close();
+  }, 15000);
+
+  it('leaves the title on the first prompt when no naming model was chosen', async () => {
+    const client = await connect(server.port, 'test-token');
+    client.send({ type: 'subscribe', threadId: 't1' });
+    client.send({ type: 'send_prompt', threadId: 't1', text: 'fail-turn please' });
+
+    await client.waitForEvent((event) => event.type === 'diff_ready');
+    expect(client.events.some((event) => event.type === 'thread_titled')).toBe(false);
+    await expect(lastMeta(config.threadsDir, 't1')).resolves.toMatchObject({
+      title: 'fail-turn please',
+      titleSource: 'prompt',
     });
 
     client.close();
@@ -447,4 +482,14 @@ async function runTurn(client: TestClient, threadId: string, text: string): Prom
     decision: 'allow',
   });
   await client.waitForEvent((event) => event.type === 'diff_ready' && event.threadId === threadId);
+}
+
+/** The thread log's latest meta header, which is where a title is persisted. */
+async function lastMeta(dir: string, threadId: string): Promise<unknown> {
+  const lines = (await readFile(join(dir, `${threadId}.jsonl`), 'utf8')).split('\n');
+  return lines
+    .filter((line) => line.trim())
+    .map((line) => JSON.parse(line) as { kind?: string })
+    .filter((line) => line.kind === 'meta')
+    .at(-1);
 }

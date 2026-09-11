@@ -27,6 +27,11 @@ describe('commands', () => {
     expect(CommandSchema.parse(command)).toEqual(command);
   });
 
+  it('round-trips send_prompt with a thread-naming model', () => {
+    const command = { type: 'send_prompt', threadId: 't1', text: 'hello', titleModel: 'haiku' };
+    expect(CommandSchema.parse(command)).toEqual(command);
+  });
+
   it('rejects send_prompt with an unknown effort or permission mode', () => {
     const base = { type: 'send_prompt', threadId: 't1', text: 'hello' };
     expect(CommandSchema.safeParse({ ...base, effort: 'turbo' }).success).toBe(false);
@@ -107,6 +112,17 @@ describe('events', () => {
       const event = { ...envelope, ...body };
       expect(EventSchema.parse(event)).toEqual(event);
     }
+  });
+
+  it('round-trips thread_titled', () => {
+    const event = {
+      type: 'thread_titled',
+      seq: 2,
+      threadId: 't1',
+      ts: 1700000000000,
+      title: 'Fix the flaky test',
+    };
+    expect(EventSchema.parse(event)).toEqual(event);
   });
 
   it('round-trips a sub-agent tool call tagged with its parent', () => {

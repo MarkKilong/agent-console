@@ -36,9 +36,23 @@ export function startTurn(
 
   // Logged here rather than on the command so a refused prompt leaves no trace.
   deps.registry.append(threadId, { type: 'user_message', text: prompt });
+  if (options.titleModel) nameThread(deps, threadId, prompt, options.titleModel);
   const turn = new Turn(deps, threadId, options);
   deps.registry.setActiveTurn(threadId, turn);
   void turn.run(prompt);
+}
+
+/**
+ * Asks a model for a better title in the background. Never awaited: the turn must not
+ * wait on it, and a thread that already has a model's title is left alone.
+ */
+function nameThread(deps: TurnDeps, threadId: string, prompt: string, model: string): void {
+  if (deps.registry.titleSource(threadId) === 'model') return;
+  void deps.adapter
+    .title?.(prompt, model)
+    .then((title) => deps.registry.setTitle(threadId, title, 'model'))
+    // The prompt-based title stands; say why in the runner's log so a broken call is noticed.
+    .catch((error: unknown) => console.warn(`thread naming failed: ${describe(error)}`));
 }
 
 class Turn implements ActiveTurn {
