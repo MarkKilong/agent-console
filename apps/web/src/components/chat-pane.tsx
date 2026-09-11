@@ -4,10 +4,13 @@ import type { PermissionDecision } from '@agent-console/contracts';
 import { Plus, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
+import { mergeModels } from '@/lib/models';
 import type { RunnerClient } from '@/lib/runner-client';
 import { isClaudeConnected, useAuthStore } from '@/store/use-auth-store';
 import { useComposerSettings } from '@/store/use-composer-settings';
 import { useConsoleStore, useThread } from '@/store/use-console-store';
+import { useModelSettings } from '@/store/use-model-settings';
+import { effectiveTitleModel, useProjectSettings } from '@/store/use-project-settings';
 import { useActiveProject } from '@/store/use-projects-store';
 import { Composer } from './composer';
 import { MessageList } from './message-list';
@@ -50,8 +53,22 @@ export function ChatPane({ client, threadId, onShowFiles, onAddProject }: Props)
   function send(text: string) {
     if (!client || !threadId) return;
     const { model, effort, permissionMode } = useComposerSettings.getState();
+    // Empty only when no model is known yet; then the runner titles from the prompt.
+    const titleModel = effectiveTitleModel(
+      mergeModels(useAuthStore.getState().models, useModelSettings.getState().custom),
+      useModelSettings.getState().disabled,
+      useProjectSettings.getState().titleModel,
+    );
     guard(() => {
-      client.send({ type: 'send_prompt', threadId, text, model, effort, permissionMode });
+      client.send({
+        type: 'send_prompt',
+        threadId,
+        text,
+        model,
+        effort,
+        permissionMode,
+        titleModel: titleModel || undefined,
+      });
       notePrompt(threadId, text);
     });
   }

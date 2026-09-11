@@ -102,10 +102,7 @@ export const useConsoleStore = create<ConsoleStore>((set) => ({
         ...state.threads,
         [event.threadId]: foldEvent(state.threads[event.threadId] ?? emptyThread(), event),
       },
-      threadMeta:
-        event.type === 'turn_started' && event.branch
-          ? branched(state.threadMeta, event.threadId, event.branch)
-          : state.threadMeta,
+      threadMeta: metaAfter(state.threadMeta, event),
     })),
 
   // The prompt itself renders from the runner's `user_message` event, not from here.
@@ -132,6 +129,19 @@ function freshThread() {
 
 function createMeta(): ThreadMeta {
   return { id: randomId(), title: 'New thread', agent: 'claude', createdAt: Date.now() };
+}
+
+/** The two events that change a thread's card in the sidebar: its branch and its name. */
+function metaAfter(metas: Record<string, ThreadMeta>, event: Event): Record<string, ThreadMeta> {
+  if (event.type === 'turn_started' && event.branch) {
+    return branched(metas, event.threadId, event.branch);
+  }
+  // The runner titled the thread, from a model or otherwise; its name wins over ours.
+  if (event.type === 'thread_titled') {
+    const meta = metas[event.threadId];
+    return meta ? { ...metas, [event.threadId]: { ...meta, title: event.title } } : metas;
+  }
+  return metas;
 }
 
 /** The runner reports the branch on every turn, so a checkout mid-thread shows up. */

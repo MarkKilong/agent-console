@@ -1,32 +1,17 @@
 'use client';
 
 import type { PermissionMode } from '@agent-console/contracts';
-import { ChevronDown, Lock, LockOpen, Paperclip, PencilLine } from 'lucide-react';
+import { Lock, LockOpen, Paperclip, PencilLine } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
-import {
-  ACCESS_MODES,
-  EFFORTS,
-  effortChoices,
-  labelOf,
-  mergeModels,
-  modelChoices,
-  resolveModelId,
-  type Choice,
-} from '@/lib/models';
+import { ACCESS_MODES, EFFORTS, effortChoices, mergeModels, resolveModelId } from '@/lib/models';
 import { useAuthStore } from '@/store/use-auth-store';
 import { useComposerDraft } from '@/store/use-composer-draft';
 import { useComposerSettings } from '@/store/use-composer-settings';
 import { useModelSettings } from '@/store/use-model-settings';
-import { ClaudeMark } from './claude-mark';
+import { ModelPicker, Picker } from './choice-picker';
 import { Spinner } from './ui';
 import { Button } from './ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from './ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 type Props = {
@@ -110,16 +95,12 @@ export function Composer({ disabled, turnActive, stopping, placeholder, onSend, 
 
         <div className="flex items-center justify-between gap-2 px-4 pb-3">
           <div className="flex min-w-0 items-center gap-1">
-            <Picker
+            <ModelPicker
               label="Model"
-              choices={modelChoices(
-                mergeModels(models, customModels),
-                disabledModels,
-                selectedModel,
-              )}
+              models={mergeModels(models, customModels)}
+              disabled={disabledModels}
               value={selectedModel}
               onChange={setModel}
-              icon={() => <ClaudeMark />}
             />
             <Picker
               label="Effort"
@@ -155,62 +136,6 @@ export function Composer({ disabled, turnActive, stopping, placeholder, onSend, 
         </div>
       </div>
     </div>
-  );
-}
-
-function Picker<T extends string>({
-  label,
-  choices,
-  value,
-  onChange,
-  icon,
-  disabledReason,
-}: {
-  label: string;
-  choices: Choice<T>[];
-  value: T;
-  onChange(id: T): void;
-  /** Leading icon for a choice, shown on the trigger and in the menu. */
-  icon?: (id: T) => ReactNode;
-  /** Why there is nothing to pick; shown as a tooltip on the dead trigger. */
-  disabledReason?: string;
-}) {
-  const trigger = (
-    <Button variant="ghost" size="sm" aria-label={label} disabled={Boolean(disabledReason)}>
-      {icon?.(value)}
-      {labelOf(choices, value)}
-      <ChevronDown className="opacity-70" />
-    </Button>
-  );
-
-  if (disabledReason) {
-    return (
-      <Tooltip>
-        {/* A disabled button swallows pointer events, so the trigger is the wrapper. */}
-        <TooltipTrigger asChild>
-          <span>{trigger}</span>
-        </TooltipTrigger>
-        <TooltipContent>{disabledReason}</TooltipContent>
-      </Tooltip>
-    );
-  }
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-auto">
-        {choices.map((choice) => (
-          <DropdownMenuItem
-            key={choice.id}
-            onSelect={() => onChange(choice.id)}
-            className="whitespace-nowrap"
-          >
-            {icon?.(choice.id)}
-            {choice.label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 

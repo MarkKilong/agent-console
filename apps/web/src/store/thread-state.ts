@@ -182,6 +182,10 @@ export function foldEvent(thread: ThreadState, event: Event): ThreadState {
       break;
     }
 
+    // Nothing to render inline: the console store takes the new name off it.
+    case 'thread_titled':
+      break;
+
     case 'error':
       next.items.push({
         kind: 'error',
