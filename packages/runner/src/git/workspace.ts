@@ -1,8 +1,8 @@
 import { readdir } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
-import type { DiffFile } from '@agent-console/contracts';
+import type { Commit, DiffFile } from '@agent-console/contracts';
 import { collectDiff, diffTrees, snapshotTree, type Scope } from './diff.js';
-import { currentBranch, isGitRepo } from './exec.js';
+import { currentBranch, git, headCommit, isGitRepo } from './exec.js';
 
 /** A repository that overlaps the workspace. */
 export type Repo = Scope & {
@@ -10,8 +10,11 @@ export type Repo = Scope & {
   prefix: string;
 };
 
-/** One tree id per repository prefix, all taken at the same moment. */
-export type Snapshot = Record<string, string>;
+/** Per repository prefix: the working tree hashed, and where HEAD was, at one moment. */
+export type Snapshot = Record<string, { tree: string; head: string | undefined }>;
+
+/** Enough to say what happened; a rebase or squash can move HEAD past far more. */
+const MAX_COMMITS = 20;
 
 const MAX_DEPTH = 3;
 const SKIP = new Set(['node_modules']);
@@ -58,7 +61,12 @@ async function findNested(dir: string, workspace: string, depth: number): Promis
 
 export async function snapshotWorkspace(repos: Repo[]): Promise<Snapshot> {
   const snapshot: Snapshot = {};
-  for (const repo of repos) snapshot[repo.prefix] = await snapshotTree(repo);
+  for (const repo of repos) {
+    snapshot[repo.prefix] = {
+      tree: await snapshotTree(repo),
+      head: await headCommit(repo.cwd),
+    };
+  }
   return snapshot;
 }
 
@@ -71,9 +79,41 @@ export async function diffWorkspace(
   const files: DiffFile[] = [];
   for (const repo of repos) {
     const [from, to] = [before[repo.prefix], after[repo.prefix]];
-    if (from && to) files.push(...prefixed(repo, await diffTrees(repo, from, to)));
+    if (from && to) files.push(...prefixed(repo, await diffTrees(repo, from.tree, to.tree)));
   }
   return files;
+}
+
+/**
+ * Commits that moved HEAD between two snapshots, newest first. A file diff cannot show
+ * a commit — it changes history, not the working tree — so this is how "commit this"
+ * becomes visible.
+ */
+export async function commitsBetween(
+  repos: Repo[],
+  before: Snapshot,
+  after: Snapshot,
+): Promise<Commit[]> {
+  const commits: Commit[] = [];
+  for (const repo of repos) {
+    const [from, to] = [before[repo.prefix], after[repo.prefix]];
+    if (!from || !to?.head || from.head === to.head) continue;
+    // Unborn before the turn: everything reachable from HEAD is new.
+    const range = from.head ? `${from.head}..${to.head}` : to.head;
+    const result = await git(repo.cwd, [
+      'log',
+      `--max-count=${MAX_COMMITS}`,
+      '--format=%H%x00%s',
+      range,
+      '--',
+    ]);
+    if (result.code !== 0) continue;
+    for (const line of result.stdout.split('\n').filter(Boolean)) {
+      const [sha = '', subject = ''] = line.split('\0');
+      commits.push({ repo: repo.prefix, sha, subject });
+    }
+  }
+  return commits;
 }
 
 /** Every repository's working tree against its HEAD. */

@@ -18,6 +18,29 @@ function assistant(thread: ThreadState): Extract<ChatItem, { kind: 'assistant' }
 }
 
 describe('foldEvent', () => {
+  it('gives a turn that only committed a summary row, so the commit is visible', () => {
+    const commit = { repo: '', sha: 'dc0c832abcdef', subject: 'Add version route' };
+    const thread = fold(
+      { type: 'user_message', text: 'commit this' },
+      { type: 'turn_started', branch: 'main' },
+      { type: 'turn_finished', stopReason: 'end_turn' },
+      { type: 'diff_ready', files: [], commits: [commit] },
+    );
+
+    expect(thread.turns[0]?.commits).toEqual([commit]);
+    expect(thread.items.at(-1)).toMatchObject({ kind: 'summary', files: 0, commits: [commit] });
+  });
+
+  it('skips the summary row when a turn neither changed a file nor committed', () => {
+    const thread = fold(
+      { type: 'user_message', text: 'just talk' },
+      { type: 'turn_started' },
+      { type: 'turn_finished', stopReason: 'end_turn' },
+      { type: 'diff_ready', files: [] },
+    );
+    expect(thread.items.some((item) => item.kind === 'summary')).toBe(false);
+  });
+
   it('renders the prompt once, from the event alone', () => {
     const thread = fold(
       { type: 'user_message', text: 'do the thing' },
