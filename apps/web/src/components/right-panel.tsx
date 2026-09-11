@@ -1,11 +1,12 @@
 'use client';
 
-import { FileDiff, FolderTree, Plus, X } from 'lucide-react';
+import { FileDiff, FolderTree, Plus, Terminal as TerminalIcon, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import type { RunnerClient } from '@/lib/runner-client';
-import { useLayoutStore, type Surface } from '@/store/use-layout-store';
+import { nextTitle, surfaceKey, useLayoutStore, type Surface } from '@/store/use-layout-store';
 import { DiffSurface } from './diff-surface';
 import { FilesSurface } from './files-surface';
+import { TerminalSurface } from './terminal-surface';
 import { IconButton } from './ui';
 import {
   DropdownMenu,
@@ -14,14 +15,18 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 
-const SURFACES = {
-  files: { label: 'Files', icon: FolderTree },
-  diff: { label: 'Diff', icon: FileDiff },
+const ICONS = {
+  files: FolderTree,
+  diff: FileDiff,
+  terminal: TerminalIcon,
 } as const;
 
-const ORDER: Surface[] = ['files', 'diff'];
+const SINGLETONS: Surface[] = [{ kind: 'files' }, { kind: 'diff' }];
 
-/** Section C: a tab strip over one surface at a time. The hidden surface unmounts. */
+/**
+ * Section C: a tab strip over one surface at a time. Files and Diff unmount when hidden;
+ * terminals stay mounted, because disposing an xterm would take its shell down with it.
+ */
 export function RightPanel({
   client,
   threadId,
@@ -33,15 +38,32 @@ export function RightPanel({
   const activeTab = useLayoutStore((state) => state.activeTab);
   const openTab = useLayoutStore((state) => state.openTab);
   const closeTab = useLayoutStore((state) => state.closeTab);
+  const defaultShell = useLayoutStore((state) => state.defaultShell);
+
+  const activeKey = activeTab ? surfaceKey(activeTab) : null;
+  const terminals = tabs.filter((tab) => tab.kind === 'terminal');
+
+  // The shell the user set as default, unless this machine has no such shell installed.
+  const openTerminal = () => {
+    const shells = client?.shells ?? [];
+    const chosen = shells.find((option) => option.kind === defaultShell) ?? shells[0];
+    const shell = chosen?.kind ?? 'default';
+    openTab({
+      kind: 'terminal',
+      id: tabId(),
+      title: nextTitle(tabs, shell, chosen?.title),
+      shell,
+    });
+  };
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-line px-2">
         {tabs.map((tab) => (
           <Tab
-            key={tab}
+            key={surfaceKey(tab)}
             surface={tab}
-            active={tab === activeTab}
+            active={surfaceKey(tab) === activeKey}
             onActivate={() => openTab(tab)}
             onClose={() => closeTab(tab)}
           />
@@ -56,22 +78,35 @@ export function RightPanel({
             </IconButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-auto">
-            {ORDER.map((surface) => {
-              const { label, icon: Icon } = SURFACES[surface];
+            {SINGLETONS.map((surface) => {
+              const Icon = ICONS[surface.kind];
               return (
-                <DropdownMenuItem key={surface} onSelect={() => openTab(surface)}>
+                <DropdownMenuItem key={surface.kind} onSelect={() => openTab(surface)}>
                   <Icon className="size-3.5" strokeWidth={1.8} />
-                  {label}
+                  {label(surface)}
                 </DropdownMenuItem>
               );
             })}
+            <DropdownMenuItem onSelect={openTerminal}>
+              <TerminalIcon className="size-3.5" strokeWidth={1.8} />
+              Terminal
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
       <div className="min-h-0 flex-1">
-        {activeTab === 'files' ? <FilesSurface client={client} /> : null}
-        {activeTab === 'diff' ? <DiffSurface client={client} threadId={threadId} /> : null}
+        {activeKey === 'files' ? <FilesSurface client={client} /> : null}
+        {activeKey === 'diff' ? <DiffSurface client={client} threadId={threadId} /> : null}
+        {terminals.map((tab) => (
+          <TerminalSurface
+            key={tab.id}
+            client={client}
+            tabId={tab.id}
+            shell={tab.shell}
+            hidden={surfaceKey(tab) !== activeKey}
+          />
+        ))}
       </div>
     </div>
   );
@@ -88,7 +123,8 @@ function Tab({
   onActivate(): void;
   onClose(): void;
 }) {
-  const { label, icon: Icon } = SURFACES[surface];
+  const Icon = ICONS[surface.kind];
+  const text = label(surface);
 
   return (
     <div
@@ -99,12 +135,12 @@ function Tab({
     >
       <button onClick={onActivate} className="flex cursor-pointer items-center gap-1.5">
         <Icon className="size-3.5" strokeWidth={1.8} />
-        {label}
+        {text}
       </button>
       <button
         onClick={onClose}
-        aria-label={`Close ${label}`}
-        title={`Close ${label}`}
+        aria-label={`Close ${text}`}
+        title={`Close ${text}`}
         className={cn(
           'flex size-4 cursor-pointer items-center justify-center rounded text-muted-foreground transition-opacity hover:text-fg group-hover:opacity-100',
           active ? 'opacity-100' : 'opacity-0',
@@ -114,4 +150,13 @@ function Tab({
       </button>
     </div>
   );
+}
+
+function label(surface: Surface): string {
+  if (surface.kind === 'terminal') return surface.title;
+  return surface.kind === 'files' ? 'Files' : 'Diff';
+}
+
+function tabId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `terminal-${Math.random().toString(36).slice(2)}`;
 }

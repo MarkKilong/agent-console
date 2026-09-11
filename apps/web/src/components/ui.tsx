@@ -1,8 +1,14 @@
 'use client';
 
-import { Check, Copy, LoaderCircle } from 'lucide-react';
+import { Check, ChevronDown, Copy, LoaderCircle } from 'lucide-react';
 import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 
 /** Shared with the links that have to look like an IconButton. */
 export const ICON_BUTTON_CLASS = cn(
@@ -23,6 +29,45 @@ export function PaneHeader({ children }: { children: ReactNode }) {
     <div className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3 text-xs text-muted-foreground">
       {children}
     </div>
+  );
+}
+
+/** Shared with the terminal bar, whose menu has more in it than a Picker's list of options. */
+export const PICKER_TRIGGER_CLASS =
+  'flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white/6 px-2 text-xs font-medium text-fg transition-colors hover:bg-white/10';
+
+/** The small dropdown a PaneHeader picks a scope — or a shell — with. */
+export function Picker({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: { id: string; label: string }[];
+  onChange(id: string): void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button aria-label={label} className={PICKER_TRIGGER_CLASS}>
+          {options.find((option) => option.id === value)?.label ?? value}
+          <ChevronDown className="size-3.5 opacity-70" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-auto">
+        {options.map((option) => (
+          <DropdownMenuItem
+            key={option.id}
+            onSelect={() => onChange(option.id)}
+            className="whitespace-nowrap"
+          >
+            {option.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
