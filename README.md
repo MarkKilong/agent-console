@@ -214,17 +214,27 @@ To run the UI on a machine without Claude, copy `apps/web/.env.example` to
 The dev and build scripts compile `packages/*` first: the app imports the workspace packages
 from their `dist/`, and the provider prefers the runner's compiled `dist/main.js` when spawning.
 
-**Add project** takes a folder on this machine. Projects live in `localStorage`, so the list —
-plus the composer's model/effort/access pickers and which side panels are open — survives a
-reload. Selecting a project posts to `POST /api/environments`, which returns `{id, url, token}`;
+**Add project** offers two sources: a **Local folder** on this machine, or a **Git URL** that is
+cloned first. A local folder can be browsed for anywhere on the machine instead of typed. Clones
+always land under `~/agent-console`, which is created on demand; "Clone into" browses only that
+folder, where subfolders can be made from the dialog to file clones under — the last choice is
+remembered. A private GitHub clone uses the sign-in from **Settings → Configuration** when there is one.
+
+Projects live in `localStorage`, so the list — plus the composer's model/effort/access pickers and
+which side panels are open — survives a reload. Selecting a project posts to
+`POST /api/environments`, which returns `{id, url, token}`;
 the browser then opens a WebSocket to the runner and drives it directly — the Next.js server is
 not in the message path. Switching projects destroys the previous environment first.
 
-| Route                          | Does                                                                                                                                                            |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/environments`       | `{repoPath, agent?}` → creates an environment and returns `{id, url, token}`. `agent` is `claude` or `codex` and overrides `RUNNER_AGENT` for that environment. |
-| `GET /api/environments/:id`    | Environment status.                                                                                                                                             |
-| `DELETE /api/environments/:id` | Destroys the environment and kills its runner.                                                                                                                  |
+| Route                                   | Does                                                                                                                                                                |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/environments`                | `{repoPath, agent?}` → creates an environment and returns `{id, url, token}`. `agent` is `claude` or `codex` and overrides `RUNNER_AGENT` for that environment.     |
+| `GET /api/environments/:id`             | Environment status.                                                                                                                                                 |
+| `DELETE /api/environments/:id`          | Destroys the environment and kills its runner.                                                                                                                      |
+| `GET /api/folders?path=`                | One level of the folder browser: `{path, parent, entries, roots}`. No `path` means the home folder.                                                                 |
+| `POST /api/projects/inspect`            | `{path}` → `{path, name, isGitRepo}` for a folder that exists.                                                                                                      |
+| `POST /api/projects/clone`              | `{url, parent?, name?}` → clones into `<parent>/<name>` under the clone root and returns `{path, name}`. `GET` answers `{parent}` with the clone root, creating it. |
+| `GET /api/projects/clone-folders?path=` | The same browser fenced to the clone root; `POST {parent, name}` makes one subfolder of it and returns `{name, path}`.                                              |
 
 `RUNNER_AGENT`, `CLAUDE_BINARY`, `CODEX_BINARY`, `CODEX_MODEL` and `CLAUDE_CONFIG_DIR` are
 optional overrides read from the Next.js process and forwarded into every runner it spawns. The defaults are the real
