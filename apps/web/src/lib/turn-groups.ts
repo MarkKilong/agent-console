@@ -1,3 +1,4 @@
+import type { Commit } from '@agent-console/contracts';
 import type { ChatItem, Turn } from '@/store/thread-state';
 
 export type UserItem = Extract<ChatItem, { kind: 'user' }>;
@@ -99,4 +100,20 @@ export function countTools(rows: WorkRow[]): number {
 /** Tool rows including everything nested beneath them, which is what the fold header counts. */
 export function countNodes(nodes: ToolNode[]): number {
   return nodes.reduce((total, node) => total + 1 + countNodes(node.children), 0);
+}
+
+export type CommitSplit = {
+  made: Commit[];
+  pulled: Commit[];
+  /** Every pulled-in commit, including those the runner's cap left out of `pulled`. */
+  pulledTotal: number;
+  pulledHidden: number;
+};
+
+/** The total counts every commit, so taking off the made rows — which always show — leaves the pulled ones. */
+export function splitCommits(summary: Pick<SummaryItem, 'commits' | 'commitsTotal'>): CommitSplit {
+  const made = summary.commits.filter((commit) => commit.made);
+  const pulled = summary.commits.filter((commit) => !commit.made);
+  const pulledTotal = summary.commitsTotal - made.length;
+  return { made, pulled, pulledTotal, pulledHidden: pulledTotal - pulled.length };
 }
