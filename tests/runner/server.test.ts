@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -10,6 +10,7 @@ import { startServer, type RunnerServer } from '../../packages/runner/src/server
 import {
   connect,
   fakeClaudeAuth,
+  fakeCodexAuth,
   fakeGithubAuth,
   makeRepo,
   testConfig,
@@ -453,6 +454,72 @@ describe('github commands', () => {
 
     client.close();
   }, 15000);
+});
+
+describe('codex commands', () => {
+  it('reports nothing to connect when the environment has no Codex CLI', async () => {
+    const client = await connect(server.port, 'test-token');
+
+    client.send({ type: 'codex_auth_status', requestId: 'c0' });
+    const status = await client.waitForResponse('c0');
+    expect(status.ok && status.data).toEqual({
+      installed: false,
+      loggedIn: false,
+      authMethod: 'none',
+      loginPending: false,
+    });
+
+    client.send({ type: 'codex_login_start', requestId: 'c1' });
+    const refused = await client.waitForResponse('c1');
+    expect(refused).toMatchObject({
+      ok: false,
+      error: 'This environment has no Codex CLI to log in',
+    });
+
+    client.close();
+  }, 15000);
+
+  it('round-trips status, login start, cancel, api key and logout', async () => {
+    await server.close();
+    const root = await mkdtemp(join(tmpdir(), 'agent-console-server-codex-'));
+    await mkdir(join(root, 'codex'), { recursive: true });
+    server = await startServer(config, undefined, fakeGithubAuth(root), fakeCodexAuth(root));
+    const client = await connect(server.port, 'test-token');
+
+    client.send({ type: 'codex_auth_status', requestId: 'c1' });
+    const before = await client.waitForResponse('c1');
+    expect(before.ok && before.data).toMatchObject({ installed: true, loggedIn: false });
+
+    client.send({ type: 'codex_login_start', requestId: 'c2' });
+    const started = await client.waitForResponse('c2');
+    expect(started.ok && started.data).toEqual({
+      userCode: 'ABCD-1234',
+      verificationUrl: 'https://auth.openai.com/codex/device',
+    });
+
+    client.send({ type: 'codex_auth_status', requestId: 'c3' });
+    const pending = await client.waitForResponse('c3');
+    expect(pending.ok && pending.data).toMatchObject({ pending: { userCode: 'ABCD-1234' } });
+
+    client.send({ type: 'codex_login_cancel', requestId: 'c4' });
+    expect(await client.waitForResponse('c4')).toMatchObject({ ok: true, data: { ok: true } });
+
+    client.send({ type: 'codex_set_api_key', requestId: 'c5', key: 'sk-good' });
+    expect(await client.waitForResponse('c5')).toMatchObject({ ok: true, data: { ok: true } });
+
+    client.send({ type: 'codex_auth_status', requestId: 'c6' });
+    const withKey = await client.waitForResponse('c6');
+    expect(withKey.ok && withKey.data).toMatchObject({ loggedIn: true, authMethod: 'api_key' });
+
+    client.send({ type: 'codex_logout', requestId: 'c7' });
+    expect(await client.waitForResponse('c7')).toMatchObject({ ok: true, data: { ok: true } });
+
+    client.send({ type: 'codex_auth_status', requestId: 'c8' });
+    const after = await client.waitForResponse('c8');
+    expect(after.ok && after.data).toMatchObject({ loggedIn: false, authMethod: 'none' });
+
+    client.close();
+  }, 20000);
 });
 
 describe('terminals', () => {

@@ -10,8 +10,9 @@ export type Config = {
   token: string;
   cwd: string;
   agent: AgentKind;
-  /** Set only for the agent in use; each adapter requires its own binary. */
+  /** Set only for the agent in use; the Claude adapter requires it. */
   claudeBinary: string | undefined;
+  /** Resolved whatever the agent is, so `codex login` can be driven from any runner. */
   codexBinary: string | undefined;
   codexModel: string | undefined;
   permissionMode: string;
@@ -45,8 +46,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     }
   }
 
+  // Resolved whatever the agent runs: the Providers page logs in to Codex through the
+  // auth runner, which is a Claude one. Only the Codex adapter needs it to be there.
   const codexOverride = env.CODEX_BINARY?.trim();
-  const codexBinary = agent === 'codex' ? codexOverride || resolveCodexBinary() : undefined;
+  const codexBinary = codexOverride || resolveCodexBinary();
   if (agent === 'codex') {
     if (!codexBinary) {
       throw new Error('Could not find the `codex` executable on PATH; set CODEX_BINARY');

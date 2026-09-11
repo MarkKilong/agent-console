@@ -59,6 +59,11 @@ export const CommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('github_login_start'), requestId }),
   z.object({ type: z.literal('github_login_cancel'), requestId }),
   z.object({ type: z.literal('github_logout'), requestId }),
+  z.object({ type: z.literal('codex_auth_status'), requestId }),
+  z.object({ type: z.literal('codex_login_start'), requestId }),
+  z.object({ type: z.literal('codex_login_cancel'), requestId }),
+  z.object({ type: z.literal('codex_logout'), requestId }),
+  z.object({ type: z.literal('codex_set_api_key'), requestId, key: z.string().min(1) }),
   z.object({
     type: z.literal('terminal_open'),
     requestId,

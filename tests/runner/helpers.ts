@@ -11,6 +11,7 @@ import {
 } from '@agent-console/contracts';
 import { WebSocket } from 'ws';
 import { ClaudeAuth, type SpawnCli } from '../../packages/runner/src/auth/claude-auth.js';
+import { CodexAuth } from '../../packages/runner/src/auth/codex-auth.js';
 import { GitHubAuth } from '../../packages/runner/src/auth/github-auth.js';
 import type { Config } from '../../packages/runner/src/config.js';
 
@@ -56,6 +57,21 @@ export function fakeClaudeAuth(root: string, onSpawn?: (args: string[]) => void)
     spawn: (binary, args, options) => {
       onSpawn?.(args);
       return spawnFakeClaude(binary, args, options);
+    },
+  });
+}
+
+const FAKE_CODEX = fileURLToPath(new URL('fixtures/fake-codex-auth.mjs', import.meta.url));
+
+/** `CodexAuth` driving the fixture CLI, with its CODEX_HOME under `root`. */
+export function fakeCodexAuth(root: string, onSpawn?: (args: string[]) => void): CodexAuth {
+  return new CodexAuth({
+    binary: FAKE_CODEX,
+    codexHome: join(root, 'codex'),
+    env: process.env,
+    spawn: (binary, args, options) => {
+      onSpawn?.(args);
+      return spawn(process.execPath, [binary, ...args], options);
     },
   });
 }
