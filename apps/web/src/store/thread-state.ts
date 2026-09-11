@@ -34,6 +34,7 @@ export type ChatItem =
       added: number;
       removed: number;
       commits: Commit[];
+      commitsTotal: number;
     }
   | { kind: 'error'; id: string; ts: number; message: string; code: string | undefined };
 
@@ -51,6 +52,8 @@ export type Turn = {
   added: number;
   removed: number;
   commits: Commit[];
+  /** Commits before the runner's cap; more than `commits.length` means the list was cut. */
+  commitsTotal: number;
   finishedAt?: number;
   stopReason?: string;
   usage?: Usage;
@@ -104,6 +107,7 @@ export function foldEvent(thread: ThreadState, event: Event): ThreadState {
           added: 0,
           removed: 0,
           commits: [],
+          commitsTotal: 0,
         },
       ];
       break;
@@ -155,7 +159,13 @@ export function foldEvent(thread: ThreadState, event: Event): ThreadState {
       break;
 
     case 'diff_ready':
-      next.turns = attachDiff(thread.turns, event.files, event.commits ?? [], event.ts);
+      next.turns = attachDiff(
+        thread.turns,
+        event.files,
+        event.commits ?? [],
+        event.commitsTotal ?? event.commits?.length ?? 0,
+        event.ts,
+      );
       pushSummary(next.items, next.turns.at(-1), event.seq, event.ts);
       break;
 
@@ -186,7 +196,13 @@ export function foldEvent(thread: ThreadState, event: Event): ThreadState {
   return next;
 }
 
-function attachDiff(turns: Turn[], files: DiffFile[], commits: Commit[], ts: number): Turn[] {
+function attachDiff(
+  turns: Turn[],
+  files: DiffFile[],
+  commits: Commit[],
+  commitsTotal: number,
+  ts: number,
+): Turn[] {
   const totals = files.reduce(
     (sum, file) => {
       const { added, removed } = parseUnifiedDiff(file.patch);
@@ -197,8 +213,8 @@ function attachDiff(turns: Turn[], files: DiffFile[], commits: Commit[], ts: num
 
   const last = turns.at(-1);
   const updated: Turn = last
-    ? { ...last, files, commits, ...totals }
-    : { index: 0, startedAt: ts, files, commits, ...totals };
+    ? { ...last, files, commits, commitsTotal, ...totals }
+    : { index: 0, startedAt: ts, files, commits, commitsTotal, ...totals };
   return last ? [...turns.slice(0, -1), updated] : [updated];
 }
 
@@ -214,6 +230,7 @@ function pushSummary(items: ChatItem[], turn: Turn | undefined, seq: number, ts:
     added: turn.added,
     removed: turn.removed,
     commits: turn.commits,
+    commitsTotal: turn.commitsTotal,
   });
 }
 
