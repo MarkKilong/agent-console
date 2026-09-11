@@ -71,6 +71,30 @@ describe('ThreadRegistry', () => {
     expect(second.stop).toHaveBeenCalledOnce();
   });
 
+  it('titles a pasted terminal block from the line the user typed under it', () => {
+    const registry = new ThreadRegistry();
+    registry.notePrompt(
+      't1',
+      'From the PowerShell terminal (last 3 lines):\n\n```text\nnpm test\nFAIL\n```\n\nfix this\n',
+    );
+    registry.append('t1', { type: 'turn_started' });
+    expect(registry.list()[0]?.title).toBe('fix this');
+  });
+
+  it('lets a model title replace a prompt title, but never the reverse', () => {
+    const registry = new ThreadRegistry();
+    registry.notePrompt('t1', 'fix this');
+    registry.setTitle('t1', 'Fixing the flaky test', 'model');
+    expect(registry.list()[0]?.title).toBe('Fixing the flaky test');
+    expect(registry.eventsAfter('t1')).toEqual([
+      expect.objectContaining({ type: 'thread_titled', title: 'Fixing the flaky test' }),
+    ]);
+
+    registry.setTitle('t1', 'fix this', 'prompt');
+    expect(registry.list()[0]?.title).toBe('Fixing the flaky test');
+    expect(registry.eventsAfter('t1')).toHaveLength(1);
+  });
+
   it('returns only events after the requested seq', () => {
     const registry = new ThreadRegistry();
     registry.append('t1', { type: 'turn_started' });

@@ -1,4 +1,5 @@
 import type { ModelInfo } from '@agent-console/contracts';
+import { promptBody } from '../title.js';
 import type { AgentAdapter, StartTurnParams, TurnCallbacks, TurnResult } from './agent-adapter.js';
 
 let lastParams: StartTurnParams | undefined;
@@ -121,6 +122,12 @@ export class FakeAgentAdapter implements AgentAdapter {
 
   async listModels(): Promise<ModelInfo[]> {
     return FAKE_MODELS;
+  }
+
+  /** The first three words, as a model would shorten them: deterministic enough to assert on. */
+  async title(prompt: string): Promise<string> {
+    const words = promptBody(prompt).trim().split(/\s+/).slice(0, 3).join(' ');
+    return words.charAt(0).toUpperCase() + words.slice(1);
   }
 
   stop(threadId: string): void {

@@ -2,10 +2,9 @@ import type { Event, EventBody, PermissionDecision, ThreadSummary } from '@agent
 import type { AgentKind } from './config.js';
 import type { Snapshot } from './git/workspace.js';
 import { MemoryThreadStore, type ThreadMeta, type ThreadStore } from './thread-store.js';
+import { capTitle, titleFromPrompt } from './title.js';
 
 export type EventListener = (event: Event) => void;
-
-const MAX_TITLE = 60;
 
 /** The turn currently running on a thread, as far as the transport layer cares. */
 export interface ActiveTurn {
@@ -64,12 +63,29 @@ export class ThreadRegistry {
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
-  /** The first prompt names the thread. */
+  /** The first prompt names the thread, until a model says otherwise. */
   notePrompt(threadId: string, prompt: string): void {
     const thread = this.thread(threadId);
     if (thread.meta.title) return;
-    thread.meta.title = prompt.trim().replace(/\s+/g, ' ').slice(0, MAX_TITLE);
+    thread.meta.title = titleFromPrompt(prompt);
+    thread.meta.titleSource = 'prompt';
     this.store.writeMeta(threadId, thread.meta);
+  }
+
+  titleSource(threadId: string): ThreadMeta['titleSource'] {
+    return this.thread(threadId).meta.titleSource;
+  }
+
+  /** Renames the thread and tells open clients. A model's title outranks a prompt's. */
+  setTitle(threadId: string, title: string, source: 'prompt' | 'model'): void {
+    const thread = this.thread(threadId);
+    if (source !== 'model' && thread.meta.titleSource === 'model') return;
+    const capped = capTitle(title);
+    if (!capped) return;
+    thread.meta.title = capped;
+    thread.meta.titleSource = source;
+    this.store.writeMeta(threadId, thread.meta);
+    this.append(threadId, { type: 'thread_titled', title: capped });
   }
 
   eventsAfter(threadId: string, afterSeq = 0): Event[] {

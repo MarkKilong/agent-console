@@ -7,6 +7,7 @@ import {
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { Effort, ModelInfo, Usage } from '@agent-console/contracts';
+import { tidyModelTitle } from '../title.js';
 import type { AgentAdapter, StartTurnParams, TurnCallbacks, TurnResult } from './agent-adapter.js';
 
 export type ClaudeAgentAdapterOptions = {
@@ -94,6 +95,41 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     }
   }
 
+  /**
+   * A one-shot with no tools, so naming a thread costs one short call. Time-boxed:
+   * the caller has already titled the thread from the prompt, so a slow answer is no answer.
+   */
+  async title(prompt: string, model: string): Promise<string> {
+    const abortController = new AbortController();
+    const timer = setTimeout(() => abortController.abort(), TITLE_TIMEOUT_MS);
+    try {
+      let title = '';
+      for await (const message of query({
+        prompt,
+        options: {
+          abortController,
+          model,
+          // No tools means one reply and done; `maxTurns: 1` would make the SDK report
+          // the limit as reached and fail the call.
+          tools: [],
+          // Without this the CLI loads the user's hooks and MCP servers, the model reads
+          // the prompt as a coding task and reaches for a tool instead of answering.
+          settingSources: [],
+          systemPrompt: TITLE_PROMPT,
+          permissionMode: 'default',
+          cwd: this.options.cwd,
+          env: this.env(),
+          pathToClaudeCodeExecutable: this.options.pathToClaudeCodeExecutable,
+        },
+      })) {
+        title = answerOf(message) ?? title;
+      }
+      return tidyModelTitle(title);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   stop(threadId: string): void {
     this.aborts.get(threadId)?.abort();
   }
@@ -125,6 +161,25 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       ...(apiKey ? { ANTHROPIC_API_KEY: apiKey } : {}),
     };
   }
+}
+
+const TITLE_PROMPT =
+  'Reply with only a title for this conversation: at most 6 words, no quotes, no trailing punctuation.';
+
+/** Naming is a nicety; a model that takes longer than this has lost its chance. */
+const TITLE_TIMEOUT_MS = 20_000;
+
+/** The turn's answer: the result line when there is one, else the last assistant text. */
+function answerOf(message: SDKMessage): string | undefined {
+  if (message.type === 'result') {
+    return message.subtype === 'success' && !message.is_error ? message.result : undefined;
+  }
+  if (message.type !== 'assistant' || message.parent_tool_use_id) return undefined;
+  const text = message.message.content
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .join('');
+  return text || undefined;
 }
 
 /** Streaming input that never produces a message, so the probe session starts no turn. */

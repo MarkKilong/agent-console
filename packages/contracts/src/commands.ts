@@ -28,6 +28,8 @@ export const CommandSchema = z.discriminatedUnion('type', [
     model: z.string().optional(),
     effort: EffortSchema.optional(),
     permissionMode: PermissionModeSchema.optional(),
+    /** Model asked to name the thread; absent leaves the title on the first prompt. */
+    titleModel: z.string().optional(),
   }),
   z.object({
     type: z.literal('answer_permission'),

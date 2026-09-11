@@ -165,6 +165,7 @@ async function dispatch(
         model: command.model,
         effort: command.effort,
         permissionMode: command.permissionMode,
+        titleModel: command.titleModel,
       });
       return;
 
