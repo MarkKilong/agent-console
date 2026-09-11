@@ -51,6 +51,24 @@ describe('commands', () => {
     }
   });
 
+  it('round-trips the terminal commands', () => {
+    for (const command of [
+      { type: 'terminal_open', requestId: 'r1', shell: 'powershell', cols: 80, rows: 24 },
+      { type: 'terminal_open', requestId: 'r1', cols: 80, rows: 24 },
+      { type: 'terminal_input', terminalId: 'tm1', data: 'ls\r' },
+      { type: 'terminal_resize', terminalId: 'tm1', cols: 100, rows: 30 },
+      { type: 'terminal_close', terminalId: 'tm1' },
+    ]) {
+      expect(CommandSchema.parse(command)).toEqual(command);
+    }
+  });
+
+  it('rejects terminal_open with an unknown shell or a zero size', () => {
+    const base = { type: 'terminal_open', requestId: 'r1', cols: 80, rows: 24 };
+    expect(CommandSchema.safeParse({ ...base, shell: 'fish' }).success).toBe(false);
+    expect(CommandSchema.safeParse({ ...base, cols: 0 }).success).toBe(false);
+  });
+
   it('rejects an unknown command type', () => {
     expect(CommandSchema.safeParse({ type: 'nope', threadId: 't1' }).success).toBe(false);
   });
@@ -192,6 +210,15 @@ describe('responses', () => {
     expect(ResponseSchema.parse(response)).toEqual(response);
   });
 
+  it('round-trips a terminal_open response', () => {
+    const response = {
+      requestId: 'r1',
+      ok: true,
+      data: { terminalId: 'tm1', shell: 'powershell', title: 'PowerShell' },
+    };
+    expect(ResponseSchema.parse(response)).toEqual(response);
+  });
+
   it('round-trips an error response', () => {
     const response = { requestId: 'r1', ok: false, error: 'boom' };
     expect(ResponseSchema.parse(response)).toEqual(response);
@@ -199,9 +226,47 @@ describe('responses', () => {
 });
 
 describe('wire messages', () => {
-  it('parses a hello', () => {
-    const hello = { kind: 'hello', protocolVersion: PROTOCOL_VERSION, runnerVersion: '0.1.0' };
+  it('parses a hello carrying the runner platform and its installed shells', () => {
+    const hello = {
+      kind: 'hello',
+      protocolVersion: PROTOCOL_VERSION,
+      runnerVersion: '0.1.0',
+      platform: 'win32',
+      shells: [
+        { kind: 'powershell', title: 'PowerShell' },
+        { kind: 'cmd', title: 'cmd' },
+      ],
+    };
     expect(ServerMessageSchema.parse(hello)).toEqual(hello);
+  });
+
+  it('rejects a hello without a platform', () => {
+    const hello = {
+      kind: 'hello',
+      protocolVersion: PROTOCOL_VERSION,
+      runnerVersion: '0.1.0',
+      shells: [],
+    };
+    expect(ServerMessageSchema.safeParse(hello).success).toBe(false);
+  });
+
+  it('rejects a hello without shells', () => {
+    const hello = {
+      kind: 'hello',
+      protocolVersion: PROTOCOL_VERSION,
+      runnerVersion: '0.1.0',
+      platform: 'linux',
+    };
+    expect(ServerMessageSchema.safeParse(hello).success).toBe(false);
+  });
+
+  it('parses the terminal message kinds', () => {
+    for (const message of [
+      { kind: 'terminal_output', terminalId: 'tm1', data: '$ ' },
+      { kind: 'terminal_exit', terminalId: 'tm1', exitCode: 0 },
+    ]) {
+      expect(ServerMessageSchema.parse(message)).toEqual(message);
+    }
   });
 
   it('rejects a command sent as a server message', () => {

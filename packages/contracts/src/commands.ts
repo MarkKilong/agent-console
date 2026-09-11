@@ -10,8 +10,15 @@ export type Effort = z.infer<typeof EffortSchema>;
 export const PermissionModeSchema = z.enum(['default', 'acceptEdits', 'bypassPermissions']);
 export type PermissionMode = z.infer<typeof PermissionModeSchema>;
 
+/** Which shell a terminal asks for; the runner resolves it to a binary per platform. */
+export const TerminalShellSchema = z.enum(['powershell', 'bash', 'cmd', 'default']);
+export type TerminalShell = z.infer<typeof TerminalShellSchema>;
+
 const threadId = z.string().min(1);
 const requestId = z.string().min(1);
+const terminalId = z.string().min(1);
+const cols = z.number().int().positive();
+const rows = z.number().int().positive();
 
 export const CommandSchema = z.discriminatedUnion('type', [
   z.object({
@@ -46,6 +53,17 @@ export const CommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('auth_logout'), requestId }),
   z.object({ type: z.literal('auth_set_api_key'), requestId, key: z.string().min(1) }),
   z.object({ type: z.literal('auth_clear_api_key'), requestId }),
+  z.object({
+    type: z.literal('terminal_open'),
+    requestId,
+    shell: TerminalShellSchema.optional(),
+    cols,
+    rows,
+  }),
+  // The three below are fire-and-forget: a keystroke must not wait for a round trip.
+  z.object({ type: z.literal('terminal_input'), terminalId, data: z.string() }),
+  z.object({ type: z.literal('terminal_resize'), terminalId, cols, rows }),
+  z.object({ type: z.literal('terminal_close'), terminalId }),
 ]);
 export type Command = z.infer<typeof CommandSchema>;
 export type CommandType = Command['type'];

@@ -377,6 +377,60 @@ describe('auth commands', () => {
   }, 20000);
 });
 
+describe('terminals', () => {
+  /** cmd is the one Windows shell whose echo is predictable; bash everywhere else. */
+  const shell = process.platform === 'win32' ? 'cmd' : 'bash';
+
+  it('opens a shell, echoes what is typed, and dies with its socket', async () => {
+    const client = await connect(server.port, 'test-token');
+
+    client.send({ type: 'terminal_open', requestId: 'tm1', shell, cols: 80, rows: 24 });
+    const opened = await client.waitForResponse('tm1');
+    if (!opened.ok || !('terminalId' in opened.data)) throw new Error('terminal_open failed');
+    expect(opened.data.terminalId).not.toBe('');
+    expect(opened.data.title).not.toBe('');
+    expect(server.terminalCount()).toBe(1);
+
+    const terminalId = opened.data.terminalId;
+    client.send({ type: 'terminal_input', terminalId, data: 'echo agent-console-ok\r' });
+    await client.waitForOutput(terminalId, 'agent-console-ok');
+
+    client.close();
+    await waitFor(() => server.terminalCount() === 0);
+  }, 20000);
+
+  it('ignores terminal input for an id the socket does not own', async () => {
+    const owner = await connect(server.port, 'test-token');
+    owner.send({ type: 'terminal_open', requestId: 'tm2', shell, cols: 80, rows: 24 });
+    const opened = await owner.waitForResponse('tm2');
+    if (!opened.ok || !('terminalId' in opened.data)) throw new Error('terminal_open failed');
+
+    const other = await connect(server.port, 'test-token');
+    other.send({
+      type: 'terminal_input',
+      terminalId: opened.data.terminalId,
+      data: 'echo leaked\r',
+    });
+    other.send({ type: 'list_threads', requestId: 'tm3' });
+
+    // The stray input is dropped, not obeyed, and the socket stays usable.
+    expect(await other.waitForResponse('tm3')).toMatchObject({ ok: true });
+    expect(other.output.size).toBe(0);
+
+    owner.close();
+    other.close();
+    await waitFor(() => server.terminalCount() === 0);
+  }, 20000);
+});
+
+async function waitFor(done: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (done()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error('Timed out waiting for the runner');
+}
+
 async function runTurn(client: TestClient, threadId: string, text: string): Promise<void> {
   client.send({ type: 'subscribe', threadId });
   client.send({ type: 'send_prompt', threadId, text });

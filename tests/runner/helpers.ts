@@ -62,9 +62,12 @@ export function fakeClaudeAuth(root: string, onSpawn?: (args: string[]) => void)
 export type TestClient = {
   events: Event[];
   responses: Response[];
+  /** Pty bytes per terminal id; terminals never reach the thread event log. */
+  output: Map<string, string>;
   send(command: Command): void;
   waitForEvent(match: (event: Event) => boolean): Promise<Event>;
   waitForResponse(requestId: string): Promise<Response>;
+  waitForOutput(terminalId: string, needle: string): Promise<string>;
   close(): void;
 };
 
@@ -73,12 +76,16 @@ export function connect(port: number, token: string): Promise<TestClient> {
     const socket = new WebSocket(`ws://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`);
     const events: Event[] = [];
     const responses: Response[] = [];
+    const output = new Map<string, string>();
     const waiters = new Set<() => void>();
 
     socket.on('message', (data) => {
       const message = ServerMessageSchema.parse(JSON.parse(data.toString()));
       if (message.kind === 'event') events.push(message.event);
       if (message.kind === 'response') responses.push(message.response);
+      if (message.kind === 'terminal_output') {
+        output.set(message.terminalId, (output.get(message.terminalId) ?? '') + message.data);
+      }
       for (const notify of [...waiters]) notify();
     });
     socket.on('error', reject);
@@ -101,10 +108,16 @@ export function connect(port: number, token: string): Promise<TestClient> {
       resolve({
         events,
         responses,
+        output,
         send: (command) => socket.send(JSON.stringify({ kind: 'command', command })),
         waitForEvent: (match) => settled(() => events.find(match)),
         waitForResponse: (requestId) =>
           settled(() => responses.find((response) => response.requestId === requestId)),
+        waitForOutput: (terminalId, needle) =>
+          settled(() => {
+            const text = output.get(terminalId);
+            return text?.includes(needle) ? text : undefined;
+          }),
         close: () => socket.close(),
       }),
     );

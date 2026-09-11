@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { EffortSchema } from './commands.js';
+import { EffortSchema, TerminalShellSchema } from './commands.js';
 import { DiffFileSchema } from './events.js';
 
 export const ListFilesDataSchema = z.object({
@@ -76,6 +76,14 @@ export const AuthLoginStartDataSchema = z.object({
 });
 export type AuthLoginStartData = z.infer<typeof AuthLoginStartDataSchema>;
 
+export const TerminalOpenDataSchema = z.object({
+  terminalId: z.string(),
+  /** What the requested kind resolved to; `powershell` becomes `default` off Windows. */
+  shell: TerminalShellSchema,
+  title: z.string(),
+});
+export type TerminalOpenData = z.infer<typeof TerminalOpenDataSchema>;
+
 /** Answer to the auth commands that only succeed or fail. */
 export const OkDataSchema = z.object({ ok: z.literal(true) });
 export type OkData = z.infer<typeof OkDataSchema>;
@@ -88,6 +96,7 @@ export const ResponseDataSchema = z.union([
   ListModelsDataSchema,
   AuthStatusDataSchema,
   AuthLoginStartDataSchema,
+  TerminalOpenDataSchema,
   OkDataSchema,
 ]);
 export type ResponseData = z.infer<typeof ResponseDataSchema>;

@@ -13,6 +13,9 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 ENV PATH="/root/.local/bin:${PATH}"
 ENV CLAUDE_BINARY="/root/.local/bin/claude"
 
+# node-pty (the terminal) ships prebuilt bindings for win32 and darwin only, so on this
+# image its install script falls through to `node-gyp rebuild`. If that build fails here,
+# add `python3 make g++` to the apt line above rather than pinning an older node-pty.
 RUN corepack enable
 
 WORKDIR /app

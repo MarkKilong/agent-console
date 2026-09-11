@@ -5,3 +5,6 @@ packages:
 # vitest pulls in esbuild, whose install script is trusted here.
 allowBuilds:
   esbuild: true
+  # node-pty ships prebuilt binaries for win32/darwin; elsewhere its install script
+  # compiles the binding, so it has to be allowed to run.
+  node-pty: true
