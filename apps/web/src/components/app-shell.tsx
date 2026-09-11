@@ -98,7 +98,7 @@ export function AppShell() {
   /** "Show files" on a turn summary: the Diff tab, opened on that turn. */
   const showFiles = (turnIndex: number) => {
     usePanelStore.getState().showDiffForTurn(turnIndex);
-    useLayoutStore.getState().openTab('diff');
+    useLayoutStore.getState().openTab({ kind: 'diff' });
   };
 
   return (

@@ -66,11 +66,11 @@ export function ToolCallRow({ node, turn }: { node: ToolNode; turn: Turn | undef
   function openInPanel(file: string) {
     const { openFile, showDiffForFile } = usePanelStore.getState();
     if (item.name === 'Read') {
-      openTab('files');
+      openTab({ kind: 'files' });
       openFile(file);
       return;
     }
-    openTab('diff');
+    openTab({ kind: 'diff' });
     // The frozen turn diff is the honest one; without it, fall back to the working tree.
     const inTurn = turn?.files.some((candidate) => candidate.path === file) ? turn.index : null;
     showDiffForFile(file, inTurn);

@@ -1,11 +1,19 @@
 import {
   ServerMessageSchema,
+  type AvailableShell,
   type Command,
   type Event,
+  type Platform,
   type ResponseData,
+  type ServerMessage,
+  type TerminalOpenData,
+  type TerminalShell,
 } from '@agent-console/contracts';
 
 export type ConnectionStatus = 'connecting' | 'open' | 'closed';
+
+/** What one terminal hears from its pty: bytes, then the exit. */
+export type TerminalMessage = Extract<ServerMessage, { kind: 'terminal_output' | 'terminal_exit' }>;
 
 /** The commands the runner answers with a `response` message. */
 export type RequestCommand =
@@ -19,7 +27,8 @@ export type RequestCommand =
   | { type: 'auth_login_code'; code: string }
   | { type: 'auth_logout' }
   | { type: 'auth_set_api_key'; key: string }
-  | { type: 'auth_clear_api_key' };
+  | { type: 'auth_clear_api_key' }
+  | { type: 'terminal_open'; shell?: TerminalShell; cols: number; rows: number };
 
 export type RunnerClientOptions = {
   url: string;
@@ -38,12 +47,17 @@ type Pending = { resolve(data: ResponseData): void; reject(error: Error): void }
  * thread from the last seq it saw, so the runner replays only what was missed.
  */
 export class RunnerClient {
+  /** What the runner reported in its `hello`; undefined until the socket opens. */
+  platform: Platform | undefined;
+  /** The shells the runner found installed; empty until the `hello` arrives. */
+  shells: AvailableShell[] = [];
   private socket: WebSocket | undefined;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private attempt = 0;
   private disposed = false;
   private readonly pending = new Map<string, Pending>();
   private readonly cursors = new Map<string, number>();
+  private readonly terminalListeners = new Map<string, (message: TerminalMessage) => void>();
   /** Requests made before the socket is open; sent in order once it is. */
   private readonly queued: Command[] = [];
 
@@ -58,7 +72,8 @@ export class RunnerClient {
 
     socket.onopen = () => {
       this.attempt = 0;
-      this.options.onStatus('open');
+      // 'open' is reported on `hello`, not here: the runner's platform arrives with it,
+      // and anything rendering on the status must see the platform too.
       for (const [threadId, afterSeq] of this.cursors) {
         this.send({ type: 'subscribe', threadId, afterSeq });
       }
@@ -80,6 +95,7 @@ export class RunnerClient {
     this.disposed = true;
     clearTimeout(this.reconnectTimer);
     this.queued.length = 0;
+    this.terminalListeners.clear();
     this.failPending(new Error('Client disposed'));
     this.socket?.close();
     this.socket = undefined;
@@ -128,6 +144,39 @@ export class RunnerClient {
     });
   }
 
+  /**
+   * Opens a pty in the workspace. The runner answers before any output flows, so a
+   * caller that subscribes right after the await misses nothing.
+   */
+  async openTerminal(shell: TerminalShell, cols: number, rows: number): Promise<TerminalOpenData> {
+    const data = await this.request({ type: 'terminal_open', shell, cols, rows });
+    if (!('terminalId' in data)) throw new Error('The runner did not open a terminal');
+    return data;
+  }
+
+  terminalInput(terminalId: string, data: string): void {
+    if (this.isOpen()) this.send({ type: 'terminal_input', terminalId, data });
+  }
+
+  terminalResize(terminalId: string, cols: number, rows: number): void {
+    if (this.isOpen()) this.send({ type: 'terminal_resize', terminalId, cols, rows });
+  }
+
+  closeTerminal(terminalId: string): void {
+    this.terminalListeners.delete(terminalId);
+    if (this.isOpen()) this.send({ type: 'terminal_close', terminalId });
+  }
+
+  /** Output and exit for one terminal; returns the unsubscribe. */
+  onTerminal(terminalId: string, handler: (message: TerminalMessage) => void): () => void {
+    this.terminalListeners.set(terminalId, handler);
+    return () => {
+      if (this.terminalListeners.get(terminalId) === handler) {
+        this.terminalListeners.delete(terminalId);
+      }
+    };
+  }
+
   private handleMessage(raw: unknown): void {
     if (typeof raw !== 'string') return;
 
@@ -155,7 +204,18 @@ export class RunnerClient {
       if (!pending) return;
       if (message.response.ok) pending.resolve(message.response.data);
       else pending.reject(new Error(message.response.error));
+      return;
     }
+    if (message.kind === 'hello') {
+      this.platform = message.platform;
+      this.shells = message.shells;
+      this.options.onStatus('open');
+      return;
+    }
+    if (message.kind === 'terminal_output' || message.kind === 'terminal_exit') {
+      this.terminalListeners.get(message.terminalId)?.(message);
+    }
+    // Anything else is a kind this build does not know; dropping it is the contract.
   }
 
   private isOpen(): boolean {

@@ -1,20 +1,14 @@
 'use client';
 
 import type { DiffFile, ResponseData } from '@agent-console/contracts';
-import { ChevronDown, ChevronsDownUp, ChevronsUpDown, RefreshCw } from 'lucide-react';
+import { ChevronsDownUp, ChevronsUpDown, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parseUnifiedDiff } from '@/lib/parse-unified-diff';
 import type { RunnerClient } from '@/lib/runner-client';
 import { useThread } from '@/store/use-console-store';
 import { usePanelStore } from '@/store/use-panel-store';
 import { FileDiff } from './file-diff';
-import { DiffStat, EmptyState, IconButton, PaneHeader, Spinner } from './ui';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from './ui/dropdown-menu';
+import { DiffStat, EmptyState, IconButton, PaneHeader, Picker, Spinner } from './ui';
 
 type Props = {
   client: RunnerClient | null;
@@ -175,43 +169,6 @@ export function DiffSurface({ client, threadId }: Props) {
         )}
       </div>
     </div>
-  );
-}
-
-function Picker({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: { id: string; label: string }[];
-  onChange(id: string): void;
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          aria-label={label}
-          className="flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md bg-white/6 px-2 text-xs font-medium text-fg transition-colors hover:bg-white/10"
-        >
-          {options.find((option) => option.id === value)?.label ?? value}
-          <ChevronDown className="size-3.5 opacity-70" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-auto">
-        {options.map((option) => (
-          <DropdownMenuItem
-            key={option.id}
-            onSelect={() => onChange(option.id)}
-            className="whitespace-nowrap"
-          >
-            {option.label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 
