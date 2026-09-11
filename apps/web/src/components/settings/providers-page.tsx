@@ -2,24 +2,102 @@
 
 import type { AuthStatusData } from '@agent-console/contracts';
 import { ExternalLink, Plus, RefreshCw, Search, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { mergeModels, type ModelRow } from '@/lib/models';
 import { isClaudeConnected, useAuthStore } from '@/store/use-auth-store';
+import { useCodexAuthStore } from '@/store/use-codex-auth-store';
 import { useModelSettings } from '@/store/use-model-settings';
 import { ClaudeMark } from '../claude-mark';
+import { CodexMark } from '../codex-mark';
 import { Dot, IconButton, Spinner } from '../ui';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Switch } from '../ui/switch';
+import { CodexCard } from './codex-card';
 
 type Run = (action: () => Promise<void>) => void;
 
 /**
- * The only settings section so far. Everything it drives runs in the auth environment —
- * a runner at the shared data root — so no project has to be open to connect Claude.
+ * The providers section: one folder tab per agent CLI, the selected one deciding the
+ * card. Everything they drive runs in the auth environment — a runner at the shared
+ * data root — so no project has to be open to connect either.
  */
 export function ProvidersPage() {
+  const openStatus = useAuthStore((state) => state.status);
+  const openError = useAuthStore((state) => state.error);
+  const auth = useAuthStore((state) => state.auth);
+  const claudeConnected = useAuthStore(isClaudeConnected);
+  const codex = useCodexAuthStore((state) => state.status);
+
+  const [tab, setTab] = useState<'claude' | 'codex'>('claude');
+
+  // A hard reload on this route has no shell to have opened the environment.
+  useEffect(() => {
+    void useAuthStore.getState().ensure();
+    void useModelSettings.persist.rehydrate();
+    return () => useCodexAuthStore.getState().stop();
+  }, []);
+
+  // The first status has to wait for the socket; a queued request would just time out.
+  useEffect(() => {
+    if (openStatus === 'open') void useCodexAuthStore.getState().refresh();
+  }, [openStatus]);
+
+  const problem = problemOf(openStatus, openError, auth);
+  const runnerProblem = openStatus === 'error';
+
+  return (
+    <div className="mx-auto w-full max-w-xl">
+      {/* The selected tab's shoulder sweeps into the gap, so the two read as one shape. */}
+      <div role="tablist" aria-label="Providers" className="flex items-end gap-3">
+        <Tab selected={tab === 'claude'} onSelect={() => setTab('claude')}>
+          <ClaudeMark />
+          <span className="text-sm font-medium">Claude</span>
+          <Dot status={problem ? 'closed' : claudeConnected ? 'open' : 'idle'} />
+        </Tab>
+        <Tab selected={tab === 'codex'} onSelect={() => setTab('codex')}>
+          <CodexMark />
+          <span className="text-sm font-medium">Codex</span>
+          <Dot status={runnerProblem ? 'closed' : codex?.loggedIn ? 'open' : 'idle'} />
+        </Tab>
+      </div>
+
+      <div className="flex min-w-0 flex-col rounded-xl rounded-tl-none border border-line bg-panel">
+        {tab === 'claude' ? <ClaudeCard /> : <CodexCard />}
+      </div>
+    </div>
+  );
+}
+
+function Tab({
+  selected,
+  onSelect,
+  children,
+}: {
+  selected: boolean;
+  onSelect(): void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      role="tab"
+      aria-selected={selected}
+      onClick={onSelect}
+      className={cn(
+        'relative inline-flex h-10 items-center gap-2 rounded-t-xl border px-4',
+        selected
+          ? 'folder-tab z-10 -mb-px border-b-0 border-line bg-panel'
+          : 'border-transparent text-muted-foreground transition-colors hover:text-fg',
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** The Claude card: the CLI login, the stored API key, and the model catalogue. */
+function ClaudeCard() {
   const status = useAuthStore((state) => state.status);
   const openError = useAuthStore((state) => state.error);
   const auth = useAuthStore((state) => state.auth);
@@ -28,12 +106,6 @@ export function ProvidersPage() {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // A hard reload on this route has no shell to have opened the environment.
-  useEffect(() => {
-    void useAuthStore.getState().ensure();
-    void useModelSettings.persist.rehydrate();
-  }, []);
 
   const run: Run = (action) => {
     setBusy(true);
@@ -47,48 +119,37 @@ export function ProvidersPage() {
   const version = auth?.version;
 
   return (
-    <div className="mx-auto w-full max-w-xl">
-      {/* Folder tab: it sits a pixel over the card so the two read as one shape. */}
-      <div className="folder-tab relative z-10 -mb-px inline-flex h-10 items-center gap-2 rounded-t-xl border border-b-0 border-line bg-panel px-4">
-        <ClaudeMark />
-        <span className="text-sm font-medium">Claude</span>
-        <Dot status={problem ? 'closed' : connected ? 'open' : 'idle'} />
-      </div>
+    <div className="space-y-4 p-4 text-xs">
+      {problem ? (
+        <p className="text-danger">{problem}</p>
+      ) : !auth ? (
+        <p className="flex items-center gap-2 text-muted-foreground">
+          <Spinner />
+          Checking Claude…
+        </p>
+      ) : login ? (
+        <SigningIn authUrl={login.authUrl} busy={busy} run={run} />
+      ) : connected ? (
+        <Connected auth={auth} busy={busy} run={run} />
+      ) : (
+        <NotConnected busy={busy} run={run} />
+      )}
 
-      <div className="flex min-w-0 flex-col rounded-xl rounded-tl-none border border-line bg-panel">
-        <div className="space-y-4 p-4 text-xs">
-          {problem ? (
-            <p className="text-danger">{problem}</p>
-          ) : !auth ? (
-            <p className="flex items-center gap-2 text-muted-foreground">
-              <Spinner />
-              Checking Claude…
-            </p>
-          ) : login ? (
-            <SigningIn authUrl={login.authUrl} busy={busy} run={run} />
-          ) : connected ? (
-            <Connected auth={auth} busy={busy} run={run} />
-          ) : (
-            <NotConnected busy={busy} run={run} />
-          )}
+      {error ? <p className="text-danger">{error}</p> : null}
 
-          {error ? <p className="text-danger">{error}</p> : null}
+      {problem ? null : <Models />}
 
-          {problem ? null : <Models />}
-
-          <div className="flex items-center justify-end gap-1 font-mono text-[11px] text-muted-foreground">
-            {version}
-            <IconButton
-              onClick={() => run(() => useAuthStore.getState().refresh())}
-              disabled={busy || status !== 'open'}
-              aria-label="Refresh status"
-              title="Refresh status"
-              className="size-6"
-            >
-              <RefreshCw className={cn('size-3', busy && 'animate-spin')} />
-            </IconButton>
-          </div>
-        </div>
+      <div className="flex items-center justify-end gap-1 font-mono text-[11px] text-muted-foreground">
+        {version}
+        <IconButton
+          onClick={() => run(() => useAuthStore.getState().refresh())}
+          disabled={busy || status !== 'open'}
+          aria-label="Refresh status"
+          title="Refresh status"
+          className="size-6"
+        >
+          <RefreshCw className={cn('size-3', busy && 'animate-spin')} />
+        </IconButton>
       </div>
     </div>
   );
