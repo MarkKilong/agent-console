@@ -2,7 +2,7 @@
 
 import type { PermissionMode } from '@agent-console/contracts';
 import { ChevronDown, Lock, LockOpen, Paperclip, PencilLine } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import {
   ACCESS_MODES,
@@ -15,6 +15,7 @@ import {
   type Choice,
 } from '@/lib/models';
 import { useAuthStore } from '@/store/use-auth-store';
+import { useComposerDraft } from '@/store/use-composer-draft';
 import { useComposerSettings } from '@/store/use-composer-settings';
 import { useModelSettings } from '@/store/use-model-settings';
 import { ClaudeMark } from './claude-mark';
@@ -45,6 +46,33 @@ export function Composer({ disabled, turnActive, stopping, placeholder, onSend, 
   const models = useAuthStore((state) => state.models);
   const disabledModels = useModelSettings((state) => state.disabled);
   const customModels = useModelSettings((state) => state.custom);
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  // Raised by an insert, read once the appended text is on screen: only then is there
+  // an end for the caret to sit at.
+  const caretToEnd = useRef(false);
+
+  // Subscribed rather than selected: a hand-off from the terminal is an event, and
+  // consuming it clears the store, which a selector would see as a second render.
+  useEffect(
+    () =>
+      useComposerDraft.subscribe((state) => {
+        if (state.insert === null) return;
+        const pending = useComposerDraft.getState().consumeInsert();
+        if (pending === null) return;
+        setText((current) => (current.trim() ? `${current}\n\n${pending}` : pending));
+        caretToEnd.current = true;
+      }),
+    [],
+  );
+
+  useEffect(() => {
+    if (!caretToEnd.current) return;
+    caretToEnd.current = false;
+    const node = textarea.current;
+    if (!node) return;
+    node.focus();
+    node.setSelectionRange(node.value.length, node.value.length);
+  }, [text]);
 
   // The persisted id may name a row by its alias or by what that alias resolves to.
   const selectedModel = resolveModelId(models, model);
@@ -62,6 +90,7 @@ export function Composer({ disabled, turnActive, stopping, placeholder, onSend, 
     <div className="shrink-0">
       <div className="rounded-composer border border-line bg-panel">
         <textarea
+          ref={textarea}
           value={text}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {

@@ -2,12 +2,14 @@
 
 import type { AvailableShell, TerminalShell } from '@agent-console/contracts';
 import type { Terminal } from '@xterm/xterm';
-import { ChevronDown } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { ChevronDown, MessageSquareText } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RunnerClient } from '@/lib/runner-client';
+import { captureForChat, type Capture } from '@/lib/terminal-capture';
+import { useComposerDraft } from '@/store/use-composer-draft';
 import { useConsoleStore } from '@/store/use-console-store';
 import { SHELL_TITLES, useLayoutStore } from '@/store/use-layout-store';
-import { PaneHeader, PICKER_TRIGGER_CLASS } from './ui';
+import { IconButton, PaneHeader, PICKER_TRIGGER_CLASS } from './ui';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -51,9 +53,29 @@ export function TerminalSurface({
   const term = useRef<Terminal | null>(null);
   // Set once the shell is gone, so keystrokes stop going nowhere.
   const dead = useRef(false);
+  // There is nothing to hand the chat until xterm has loaded and opened.
+  const [ready, setReady] = useState(false);
   const status = useConsoleStore((state) => state.environment?.status);
   const setTerminalShell = useLayoutStore((state) => state.setTerminalShell);
   const shells = client?.shells ?? [];
+  const current = resolved(shell, shells);
+  const shellTitle =
+    shells.find((option) => option.kind === current)?.title ?? SHELL_TITLES[current];
+
+  const ask = useCallback(() => {
+    const xterm = term.current;
+    if (!xterm) return;
+    const capture = captureForChat(xterm);
+    // A terminal showing nothing yet has nothing to ask about.
+    if (!capture.text) return;
+    useComposerDraft.getState().requestInsert(askBlock(shellTitle, capture));
+  }, [shellTitle]);
+
+  // The key handler is attached once, with the xterm, so it reaches the action by ref.
+  const askNow = useRef(ask);
+  useEffect(() => {
+    askNow.current = ask;
+  }, [ask]);
 
   useEffect(() => {
     const node = host.current;
@@ -86,10 +108,25 @@ export function TerminalSurface({
       term.current = xterm;
       dead.current = false;
 
+      // Ctrl+Shift+A is ours: keep it out of the pty.
+      xterm.attachCustomKeyEventHandler((event) => {
+        if (
+          event.type === 'keydown' &&
+          event.ctrlKey &&
+          event.shiftKey &&
+          event.key.toLowerCase() === 'a'
+        ) {
+          askNow.current();
+          return false;
+        }
+        return true;
+      });
+
       const fit = new FitAddon();
       xterm.loadAddon(fit);
       xterm.open(node);
       fitTo(node, fit);
+      setReady(true);
 
       try {
         const opened = await client.openTerminal(shell, xterm.cols, xterm.rows);
@@ -133,6 +170,7 @@ export function TerminalSurface({
       if (terminalId) client.closeTerminal(terminalId);
       term.current?.dispose();
       term.current = null;
+      setReady(false);
     };
   }, [client, shell]);
 
@@ -158,6 +196,15 @@ export function TerminalSurface({
             {shells[0]?.title ?? SHELL_TITLES.default}
           </span>
         )}
+        <IconButton
+          onClick={ask}
+          disabled={!ready}
+          aria-label="Ask about this"
+          title="Ask about this (Ctrl+Shift+A)"
+          className="ml-auto"
+        >
+          <MessageSquareText className="size-3.5" />
+        </IconButton>
       </PaneHeader>
       <div ref={host} className="min-h-0 w-full flex-1 overflow-hidden bg-panel p-1" />
     </div>
@@ -226,6 +273,16 @@ function ShellMenu({
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+/**
+ * What lands in the composer: a line naming where it came from, then the output fenced
+ * so the agent reads it as terminal text rather than as part of the question.
+ */
+function askBlock(title: string, capture: Capture): string {
+  const what = capture.kind === 'selection' ? 'selection' : `last ${capture.lines} lines`;
+  // Ends the fence line so the question the user types lands below it, not on it.
+  return `From the ${title} terminal (${what}):\n\n\`\`\`text\n${capture.text}\n\`\`\`\n`;
 }
 
 /** Fitting a display:none host measures zero and throws off the pty, so skip it. */
