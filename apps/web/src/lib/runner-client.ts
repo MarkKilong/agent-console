@@ -28,6 +28,10 @@ export type RequestCommand =
   | { type: 'auth_logout' }
   | { type: 'auth_set_api_key'; key: string }
   | { type: 'auth_clear_api_key' }
+  | { type: 'github_status' }
+  | { type: 'github_login_start' }
+  | { type: 'github_login_cancel' }
+  | { type: 'github_logout' }
   | { type: 'terminal_open'; shell?: TerminalShell; cols: number; rows: number };
 
 export type RunnerClientOptions = {

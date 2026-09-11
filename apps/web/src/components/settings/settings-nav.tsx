@@ -6,6 +6,7 @@ import { cn } from '@/lib/cn';
 
 const SECTIONS = [
   { href: '/settings/providers', label: 'Providers' },
+  { href: '/settings/configuration', label: 'Configuration' },
   { href: '/settings/project', label: 'Project' },
 ];
 
