@@ -1,12 +1,20 @@
 'use client';
 
-import type { PermissionDecision } from '@agent-console/contracts';
-import { ArrowDown, CircleAlert, FileDiff, GitCommitHorizontal } from 'lucide-react';
+import type { Commit, PermissionDecision } from '@agent-console/contracts';
+import {
+  ArrowDown,
+  ChevronDown,
+  ChevronRight,
+  CircleAlert,
+  FileDiff,
+  GitCommitHorizontal,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatCost, formatTokens } from '@/lib/format';
 import {
   groupTurns,
   nestTools,
+  splitCommits,
   type ErrorItem,
   type SummaryItem,
   type TurnGroup,
@@ -163,6 +171,8 @@ function SummaryRow({
   summary: SummaryItem;
   onShowFiles(turnIndex: number): void;
 }) {
+  const { made, pulled, pulledTotal, pulledHidden } = splitCommits(summary);
+
   return (
     <div className="space-y-1 px-0.5 text-xs text-muted-foreground">
       {summary.files > 0 ? (
@@ -181,16 +191,66 @@ function SummaryRow({
           </button>
         </div>
       ) : null}
-      {summary.commits.map((commit) => (
-        <div key={`${commit.repo}/${commit.sha}`} className="flex items-center gap-1.5">
-          <GitCommitHorizontal className="size-3" />
-          <span>
-            Committed <span className="text-fg">{commit.subject}</span>
-          </span>
-          {commit.repo ? <span className="text-muted-foreground/70">in {commit.repo}</span> : null}
-          <span className="font-mono text-muted-foreground/70">{commit.sha.slice(0, 7)}</span>
-        </div>
+      {made.map((commit) => (
+        <CommitLine key={`${commit.repo}/${commit.sha}`} commit={commit} />
       ))}
+      {pulledTotal > 0 ? (
+        <PulledCommits pulled={pulled} total={pulledTotal} hidden={pulledHidden} />
+      ) : null}
+    </div>
+  );
+}
+
+function CommitLine({ commit }: { commit: Commit }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <GitCommitHorizontal className="size-3 shrink-0" />
+      <span>
+        {commit.made ? 'Committed' : 'Pulled in'} <span className="text-fg">{commit.subject}</span>
+      </span>
+      {commit.repo ? <span className="text-muted-foreground/70">in {commit.repo}</span> : null}
+      <span className="font-mono text-muted-foreground/70">{commit.sha.slice(0, 7)}</span>
+    </div>
+  );
+}
+
+/** Commits the turn only pulled in are noise next to the ones it made, so they fold away. */
+function PulledCommits({
+  pulled,
+  total,
+  hidden,
+}: {
+  pulled: Commit[];
+  total: number;
+  hidden: number;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(!open)}
+        className="-mx-1 flex w-full cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-white/5"
+      >
+        <GitCommitHorizontal className="size-3 shrink-0" />
+        <span>
+          Pulled in {total} commit{total === 1 ? '' : 's'}
+        </span>
+        <span className="flex-1" />
+        {open ? (
+          <ChevronDown className="size-3.5 shrink-0" />
+        ) : (
+          <ChevronRight className="size-3.5 shrink-0" />
+        )}
+      </button>
+      {open ? (
+        <div className="mt-1 space-y-1">
+          {pulled.map((commit) => (
+            <CommitLine key={`${commit.repo}/${commit.sha}`} commit={commit} />
+          ))}
+          {hidden > 0 ? <div className="text-muted-foreground/70">and {hidden} more</div> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

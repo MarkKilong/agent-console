@@ -1,9 +1,10 @@
-import type { Event, EventBody } from '@agent-console/contracts';
+import type { Commit, Event, EventBody } from '@agent-console/contracts';
 import { describe, expect, it } from 'vitest';
 import {
   countTools,
   groupTurns,
   nestTools,
+  splitCommits,
   type WorkRow,
 } from '../../apps/web/src/lib/turn-groups.js';
 import { emptyThread, foldEvent } from '../../apps/web/src/store/thread-state.js';
@@ -167,3 +168,43 @@ describe('nestTools', () => {
 function ids(rows: WorkRow[]): string[] {
   return rows.flatMap((row) => (row.kind === 'tool' ? [row.node.item.id] : []));
 }
+
+function commit(index: number, made: boolean): Commit {
+  return { repo: '', sha: `sha${index}`, subject: `Commit ${index}`, made };
+}
+
+function commits(made: number, pulled: number): Commit[] {
+  return [
+    ...Array.from({ length: made }, (_, i) => commit(i, true)),
+    ...Array.from({ length: pulled }, (_, i) => commit(made + i, false)),
+  ];
+}
+
+describe('splitCommits', () => {
+  it('leaves nothing to fold when the turn only made its own commit', () => {
+    const split = splitCommits({ commits: commits(1, 0), commitsTotal: 1 });
+
+    expect(split.made).toHaveLength(1);
+    expect(split.pulled).toEqual([]);
+    expect(split.pulledTotal).toBe(0);
+    expect(split.pulledHidden).toBe(0);
+  });
+
+  it('counts the pulled-in commits the cap left out of a merge', () => {
+    const split = splitCommits({ commits: commits(1, 19), commitsTotal: 26 });
+
+    expect(split.made).toHaveLength(1);
+    expect(split.pulled).toHaveLength(19);
+    expect(split.pulledTotal).toBe(25);
+    expect(split.pulledHidden).toBe(6);
+  });
+
+  it('hides nothing when every pulled-in commit fits under the cap', () => {
+    const split = splitCommits({ commits: commits(0, 20), commitsTotal: 20 });
+
+    expect(split.made).toEqual([]);
+    expect(split.pulled).toHaveLength(20);
+    expect(split.pulledTotal).toBe(20);
+    expect(split.pulledHidden).toBe(0);
+  });
+});
