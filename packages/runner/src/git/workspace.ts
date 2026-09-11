@@ -85,16 +85,22 @@ export async function diffWorkspace(
 }
 
 /**
- * Commits that moved HEAD between two snapshots, newest first. A file diff cannot show
- * a commit — it changes history, not the working tree — so this is how "commit this"
- * becomes visible.
+ * Commits that moved HEAD between two snapshots, newest first, capped at MAX_COMMITS with
+ * `total` saying how many there really were. A file diff cannot show a commit — it changes
+ * history, not the working tree — so this is how "commit this" becomes visible.
+ *
+ * `sinceSeconds` is when the turn started; a commit is `made` when its committer time is at
+ * or after it. Committer time rather than author time on purpose: a rebase during the turn
+ * rewrites commits, and that is the turn's doing.
  */
 export async function commitsBetween(
   repos: Repo[],
   before: Snapshot,
   after: Snapshot,
-): Promise<Commit[]> {
+  sinceSeconds: number,
+): Promise<{ commits: Commit[]; total: number }> {
   const commits: Commit[] = [];
+  let total = 0;
   for (const repo of repos) {
     const [from, to] = [before[repo.prefix], after[repo.prefix]];
     if (!from || !to?.head || from.head === to.head) continue;
@@ -103,17 +109,24 @@ export async function commitsBetween(
     const result = await git(repo.cwd, [
       'log',
       `--max-count=${MAX_COMMITS}`,
-      '--format=%H%x00%s',
+      '--format=%H%x00%ct%x00%s',
       range,
       '--',
     ]);
     if (result.code !== 0) continue;
     for (const line of result.stdout.split('\n').filter(Boolean)) {
-      const [sha = '', subject = ''] = line.split('\0');
-      commits.push({ repo: repo.prefix, sha, subject });
+      const [sha = '', committed = '', subject = ''] = line.split('\0');
+      commits.push({ repo: repo.prefix, sha, subject, made: Number(committed) >= sinceSeconds });
     }
+    total += await countCommits(repo, range);
   }
-  return commits;
+  return { commits, total };
+}
+
+async function countCommits(repo: Repo, range: string): Promise<number> {
+  const result = await git(repo.cwd, ['rev-list', '--count', range, '--']);
+  if (result.code !== 0) return 0;
+  return Number(result.stdout.trim()) || 0;
 }
 
 /** Every repository's working tree against its HEAD. */

@@ -14,12 +14,18 @@ export const DiffFileSchema = z.object({
 });
 export type DiffFile = z.infer<typeof DiffFileSchema>;
 
-/** A commit the agent made during a turn. */
+/** A commit HEAD moved over during a turn. */
 export const CommitSchema = z.object({
   /** Which repository, as its path under the workspace; '' for the one enclosing it. */
   repo: z.string(),
   sha: z.string(),
   subject: z.string(),
+  /**
+   * False for a commit a pull, merge or branch switch brought in rather than the turn making
+   * it. Defaults so thread logs written before this field existed still parse: back then
+   * every listed commit was the turn's own.
+   */
+  made: z.boolean().default(true),
 });
 export type Commit = z.infer<typeof CommitSchema>;
 
@@ -83,6 +89,8 @@ export const EventSchema = z.discriminatedUnion('type', [
     files: z.array(DiffFileSchema),
     /** Commits made during the turn; they change history, not files, so `files` misses them. */
     commits: z.array(CommitSchema).optional(),
+    /** How many commits there were before the cap; more than `commits.length` means it was cut. */
+    commitsTotal: z.number().int().nonnegative().optional(),
   }),
   z.object({
     ...envelope,

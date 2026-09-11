@@ -12,11 +12,18 @@ import {
   workspaceBranch,
 } from '../../packages/runner/src/git/workspace.js';
 
-const git = (cwd: string, args: string[]) =>
+const git = (cwd: string, args: string[], env?: Record<string, string>) =>
   execFileSync('git', ['-c', 'user.email=test@example.com', '-c', 'user.name=test', ...args], {
     cwd,
     stdio: 'pipe',
+    env: { ...process.env, ...env },
   });
+
+/** Dates a commit someone else made long before the turn would carry. */
+const OLD = { GIT_AUTHOR_DATE: '2020-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2020-01-01T00:00:00Z' };
+
+/** What turns.ts passes as the turn's start: whole seconds, one back for clock granularity. */
+const turnStart = () => Math.floor(Date.now() / 1000) - 1;
 
 /** A repository on `main` with one committed file. */
 async function initRepo(dir: string): Promise<void> {
@@ -163,15 +170,24 @@ describe('commitsBetween', () => {
     await writeFile(join(scratch, 'index.ts'), 'export const a = 2;\n');
     const repos = await discoverRepos(scratch);
     const before = await snapshotWorkspace(repos);
+    const since = turnStart();
 
     // "commit this": history moves, the working tree does not.
     git(scratch, ['commit', '-qam', 'Add version route']);
 
     const after = await snapshotWorkspace(repos);
     await expect(diffWorkspace(repos, before, after)).resolves.toEqual([]);
-    await expect(commitsBetween(repos, before, after)).resolves.toEqual([
-      { repo: '', sha: expect.stringMatching(/^[0-9a-f]{40}$/), subject: 'Add version route' },
-    ]);
+    await expect(commitsBetween(repos, before, after, since)).resolves.toEqual({
+      commits: [
+        {
+          repo: '',
+          sha: expect.stringMatching(/^[0-9a-f]{40}$/),
+          subject: 'Add version route',
+          made: true,
+        },
+      ],
+      total: 1,
+    });
   });
 
   it('counts a first commit in a repository that had none', async () => {
@@ -180,14 +196,16 @@ describe('commitsBetween', () => {
     await writeFile(join(scratch, 'app', 'index.ts'), 'v1\n');
     const repos = await discoverRepos(scratch);
     const before = await snapshotWorkspace(repos);
+    const since = turnStart();
 
     git(join(scratch, 'app'), ['add', '-A']);
     git(join(scratch, 'app'), ['commit', '-qm', 'Initial commit']);
 
     const after = await snapshotWorkspace(repos);
-    await expect(commitsBetween(repos, before, after)).resolves.toEqual([
-      { repo: 'app', sha: expect.any(String), subject: 'Initial commit' },
-    ]);
+    await expect(commitsBetween(repos, before, after, since)).resolves.toEqual({
+      commits: [{ repo: 'app', sha: expect.any(String), subject: 'Initial commit', made: true }],
+      total: 1,
+    });
   });
 
   it('reports nothing when HEAD did not move', async () => {
@@ -196,7 +214,51 @@ describe('commitsBetween', () => {
     const before = await snapshotWorkspace(repos);
     await writeFile(join(scratch, 'index.ts'), 'edited, not committed\n');
     const after = await snapshotWorkspace(repos);
-    await expect(commitsBetween(repos, before, after)).resolves.toEqual([]);
+    await expect(commitsBetween(repos, before, after, turnStart())).resolves.toEqual({
+      commits: [],
+      total: 0,
+    });
+  });
+
+  it('caps the list a pull brings in and still says how many there were', async () => {
+    await initRepo(scratch);
+    const repos = await discoverRepos(scratch);
+    const before = await snapshotWorkspace(repos);
+    const since = turnStart();
+
+    for (let i = 0; i < 25; i += 1) {
+      await writeFile(join(scratch, `pulled-${i}.ts`), `export const n = ${i};\n`);
+      git(scratch, ['add', '-A']);
+      git(scratch, ['commit', '-qm', `Pulled ${i}`], OLD);
+    }
+
+    const after = await snapshotWorkspace(repos);
+    const { commits, total } = await commitsBetween(repos, before, after, since);
+    expect(total).toBe(25);
+    expect(commits).toHaveLength(20);
+    expect(commits.every((commit) => !commit.made)).toBe(true);
+  });
+
+  it('tells the commit the turn made from the ones it pulled in', async () => {
+    await initRepo(scratch);
+    const repos = await discoverRepos(scratch);
+    const before = await snapshotWorkspace(repos);
+    const since = turnStart();
+
+    for (const n of [1, 2]) {
+      await writeFile(join(scratch, `pulled-${n}.ts`), `export const n = ${n};\n`);
+      git(scratch, ['add', '-A']);
+      git(scratch, ['commit', '-qm', `Pulled ${n}`], OLD);
+    }
+    await writeFile(join(scratch, 'index.ts'), 'export const a = 2;\n');
+    git(scratch, ['commit', '-qam', 'Add version route']);
+
+    const { commits } = await commitsBetween(repos, before, await snapshotWorkspace(repos), since);
+    expect(commits.map((commit) => [commit.subject, commit.made])).toEqual([
+      ['Add version route', true],
+      ['Pulled 2', false],
+      ['Pulled 1', false],
+    ]);
   });
 });
 

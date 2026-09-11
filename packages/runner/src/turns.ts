@@ -47,6 +47,8 @@ class Turn implements ActiveTurn {
   private repos: Repo[] = [];
   /** Working tree as it looked when the turn started; the diff is measured against it. */
   private baseSnapshot: Snapshot | undefined;
+  /** When the base snapshot was taken, in git's units; separates commits made from pulled in. */
+  private startedAtSeconds = 0;
   /** Set by stop(); a stop landing before the adapter starts must not be lost. */
   private stopped = false;
   /** The adapter only knows about the turn once startTurn has been called. */
@@ -65,6 +67,8 @@ class Turn implements ActiveTurn {
     const branch = await workspaceBranch(this.repos);
     if (branch) registry.setBranch(this.threadId, branch);
     registry.append(this.threadId, { type: 'turn_started', ...(branch ? { branch } : {}) });
+    // A second back, because git stores whole seconds and the clocks need not agree exactly.
+    this.startedAtSeconds = Math.floor(Date.now() / 1000) - 1;
     this.baseSnapshot = await this.snapshot();
     registry.setBaseSnapshot(this.threadId, this.baseSnapshot);
 
@@ -146,11 +150,14 @@ class Turn implements ActiveTurn {
     const after = before ? await this.snapshot() : undefined;
     try {
       const files = before && after ? await diffWorkspace(this.repos, before, after) : [];
-      const commits = before && after ? await commitsBetween(this.repos, before, after) : [];
+      const { commits, total } =
+        before && after
+          ? await commitsBetween(this.repos, before, after, this.startedAtSeconds)
+          : { commits: [], total: 0 };
       this.deps.registry.append(this.threadId, {
         type: 'diff_ready',
         files,
-        ...(commits.length ? { commits } : {}),
+        ...(commits.length ? { commits, commitsTotal: total } : {}),
       });
     } catch (error) {
       this.deps.registry.append(this.threadId, {

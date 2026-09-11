@@ -19,7 +19,7 @@ function assistant(thread: ThreadState): Extract<ChatItem, { kind: 'assistant' }
 
 describe('foldEvent', () => {
   it('gives a turn that only committed a summary row, so the commit is visible', () => {
-    const commit = { repo: '', sha: 'dc0c832abcdef', subject: 'Add version route' };
+    const commit = { repo: '', sha: 'dc0c832abcdef', subject: 'Add version route', made: true };
     const thread = fold(
       { type: 'user_message', text: 'commit this' },
       { type: 'turn_started', branch: 'main' },
@@ -29,6 +29,22 @@ describe('foldEvent', () => {
 
     expect(thread.turns[0]?.commits).toEqual([commit]);
     expect(thread.items.at(-1)).toMatchObject({ kind: 'summary', files: 0, commits: [commit] });
+  });
+
+  it('carries the total past the cap, so the row can say how many were left out', () => {
+    const commits = Array.from({ length: 20 }, (_, i) => ({
+      repo: '',
+      sha: `sha${i}`,
+      subject: `Pulled ${i}`,
+      made: false,
+    }));
+    const thread = fold(
+      { type: 'turn_started' },
+      { type: 'diff_ready', files: [], commits, commitsTotal: 25 },
+    );
+
+    expect(thread.turns[0]?.commitsTotal).toBe(25);
+    expect(thread.items.at(-1)).toMatchObject({ kind: 'summary', commitsTotal: 25 });
   });
 
   it('skips the summary row when a turn neither changed a file nor committed', () => {
