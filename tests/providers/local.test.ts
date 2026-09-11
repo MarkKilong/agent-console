@@ -123,6 +123,14 @@ describe('LocalProvider', () => {
     await provider.destroy(second.id);
   }, 45_000);
 
+  it('names a missing folder instead of blaming the node executable', async () => {
+    const provider = createProvider('local');
+    const repoPath = join(tmpdir(), `agent-console-missing-${Date.now()}`);
+    await expect(provider.create({ repoPath, env: { RUNNER_AGENT: 'fake' } })).rejects.toThrow(
+      `Folder does not exist: ${repoPath}`,
+    );
+  });
+
   it('rejects a spec the local provider cannot satisfy', async () => {
     const provider = createProvider('local');
     await expect(provider.create({ repoUrl: 'https://example.com/repo.git' })).rejects.toThrow(

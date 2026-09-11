@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
@@ -35,6 +35,10 @@ export class LocalProvider implements EnvironmentProvider {
     const parsed = EnvSpecSchema.parse(spec);
     if (!parsed.repoPath) {
       throw new Error('The local provider needs repoPath; cloning repoUrl is not supported yet');
+    }
+    // Node reports a missing cwd as `spawn node ENOENT`, which points at the wrong thing.
+    if (!isDirectory(parsed.repoPath)) {
+      throw new Error(`Folder does not exist: ${parsed.repoPath}`);
     }
 
     // The provider outlives any one browser session, so reopening a folder must
@@ -180,6 +184,14 @@ export class LocalProvider implements EnvironmentProvider {
     const environment = this.environments.get(id);
     if (!environment) throw new Error(`Unknown environment: ${id}`);
     return environment;
+  }
+}
+
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
   }
 }
 
