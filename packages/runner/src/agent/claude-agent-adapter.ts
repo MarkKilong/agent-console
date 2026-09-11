@@ -7,6 +7,7 @@ import {
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { Effort, ModelInfo, Usage } from '@agent-console/contracts';
+import { gitEnv } from '../git/env.js';
 import { tidyModelTitle } from '../title.js';
 import type { AgentAdapter, StartTurnParams, TurnCallbacks, TurnResult } from './agent-adapter.js';
 
@@ -19,6 +20,8 @@ export type ClaudeAgentAdapterOptions = {
   env?: Record<string, string>;
   /** Read per turn: the key can be set or cleared while the runner is up. */
   apiKey?: () => string | undefined;
+  /** Same deal for the GitHub sign-in the agent's git and `gh` inherit. */
+  githubToken?: () => string | undefined;
 };
 
 export class ClaudeAgentAdapter implements AgentAdapter {
@@ -152,11 +155,12 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     }
   }
 
-  /** Read per call: the key can be set or cleared while the runner is up. */
+  /** Read per call: either credential can be set or cleared while the runner is up. */
   private env(): Record<string, string | undefined> {
     const apiKey = this.options.apiKey?.();
     return {
       ...process.env,
+      ...gitEnv(this.options.githubToken?.()),
       ...this.options.env,
       ...(apiKey ? { ANTHROPIC_API_KEY: apiKey } : {}),
     };

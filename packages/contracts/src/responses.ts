@@ -76,6 +76,25 @@ export const AuthLoginStartDataSchema = z.object({
 });
 export type AuthLoginStartData = z.infer<typeof AuthLoginStartDataSchema>;
 
+/** The stored GitHub sign-in, answered from disk: no call to GitHub is made. */
+export const GithubStatusDataSchema = z.object({
+  connected: z.boolean(),
+  login: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
+  /** A device-flow login waiting for the user to approve it on github.com. */
+  pending: z.object({ userCode: z.string(), verificationUri: z.string() }).optional(),
+  /** Why the last login ended without a token; cleared when the next one starts. */
+  error: z.string().optional(),
+});
+export type GithubStatusData = z.infer<typeof GithubStatusDataSchema>;
+
+export const GithubLoginStartDataSchema = z.object({
+  userCode: z.string(),
+  verificationUri: z.string(),
+  expiresIn: z.number().int().nonnegative(),
+});
+export type GithubLoginStartData = z.infer<typeof GithubLoginStartDataSchema>;
+
 export const TerminalOpenDataSchema = z.object({
   terminalId: z.string(),
   /** What the requested kind resolved to; `powershell` becomes `default` off Windows. */
@@ -96,6 +115,8 @@ export const ResponseDataSchema = z.union([
   ListModelsDataSchema,
   AuthStatusDataSchema,
   AuthLoginStartDataSchema,
+  GithubStatusDataSchema,
+  GithubLoginStartDataSchema,
   TerminalOpenDataSchema,
   OkDataSchema,
 ]);

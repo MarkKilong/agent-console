@@ -11,6 +11,7 @@ import {
 } from '@agent-console/contracts';
 import { WebSocket } from 'ws';
 import { ClaudeAuth, type SpawnCli } from '../../packages/runner/src/auth/claude-auth.js';
+import { GitHubAuth } from '../../packages/runner/src/auth/github-auth.js';
 import type { Config } from '../../packages/runner/src/config.js';
 
 export async function makeRepo(): Promise<string> {
@@ -56,6 +57,23 @@ export function fakeClaudeAuth(root: string, onSpawn?: (args: string[]) => void)
       onSpawn?.(args);
       return spawnFakeClaude(binary, args, options);
     },
+  });
+}
+
+/** `GitHubAuth` whose device flow never completes, so the commands can be driven. */
+export function fakeGithubAuth(root: string): GitHubAuth {
+  return new GitHubAuth({
+    dataDir: join(root, 'data'),
+    fetch: async (input) =>
+      String(input).endsWith('/login/device/code')
+        ? Response.json({
+            device_code: 'dev-1',
+            user_code: 'ABCD-1234',
+            verification_uri: 'https://github.com/login/device',
+            expires_in: 900,
+            interval: 1,
+          })
+        : Response.json({ error: 'authorization_pending' }),
   });
 }
 
