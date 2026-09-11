@@ -14,6 +14,15 @@ export const DiffFileSchema = z.object({
 });
 export type DiffFile = z.infer<typeof DiffFileSchema>;
 
+/** A commit the agent made during a turn. */
+export const CommitSchema = z.object({
+  /** Which repository, as its path under the workspace; '' for the one enclosing it. */
+  repo: z.string(),
+  sha: z.string(),
+  subject: z.string(),
+});
+export type Commit = z.infer<typeof CommitSchema>;
+
 export const UsageSchema = z.object({
   inputTokens: z.number().int().nonnegative().optional(),
   outputTokens: z.number().int().nonnegative().optional(),
@@ -68,7 +77,13 @@ export const EventSchema = z.discriminatedUnion('type', [
     requestId: z.string(),
     decision: PermissionDecisionSchema,
   }),
-  z.object({ ...envelope, type: z.literal('diff_ready'), files: z.array(DiffFileSchema) }),
+  z.object({
+    ...envelope,
+    type: z.literal('diff_ready'),
+    files: z.array(DiffFileSchema),
+    /** Commits made during the turn; they change history, not files, so `files` misses them. */
+    commits: z.array(CommitSchema).optional(),
+  }),
   z.object({
     ...envelope,
     type: z.literal('turn_finished'),

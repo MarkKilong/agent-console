@@ -29,6 +29,12 @@ export async function currentBranch(cwd: string): Promise<string | undefined> {
   return result.code === 0 && branch && branch !== 'HEAD' ? branch : undefined;
 }
 
+/** The commit HEAD points at; undefined before the first commit. */
+export async function headCommit(cwd: string): Promise<string | undefined> {
+  const result = await git(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD']);
+  return result.code === 0 ? result.stdout.trim() || undefined : undefined;
+}
+
 export async function isGitRepo(cwd: string): Promise<boolean> {
   const result = await git(cwd, ['rev-parse', '--is-inside-work-tree']);
   return result.code === 0 && result.stdout.trim() === 'true';

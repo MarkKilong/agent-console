@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { PermissionDecision } from '@agent-console/contracts';
 import type { AgentAdapter, PermissionRequest, TurnOptions } from './agent/agent-adapter.js';
 import {
+  commitsBetween,
   diffWorkspace,
   discoverRepos,
   snapshotWorkspace,
@@ -145,7 +146,12 @@ class Turn implements ActiveTurn {
     const after = before ? await this.snapshot() : undefined;
     try {
       const files = before && after ? await diffWorkspace(this.repos, before, after) : [];
-      this.deps.registry.append(this.threadId, { type: 'diff_ready', files });
+      const commits = before && after ? await commitsBetween(this.repos, before, after) : [];
+      this.deps.registry.append(this.threadId, {
+        type: 'diff_ready',
+        files,
+        ...(commits.length ? { commits } : {}),
+      });
     } catch (error) {
       this.deps.registry.append(this.threadId, {
         type: 'error',

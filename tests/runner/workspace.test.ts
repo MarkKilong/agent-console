@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   collectWorkspaceDiff,
+  commitsBetween,
   diffWorkspace,
   discoverRepos,
   snapshotWorkspace,
@@ -153,6 +154,49 @@ describe('snapshotWorkspace and diffWorkspace', () => {
 
     const after = await snapshotWorkspace(repos);
     await expect(diffWorkspace(repos, before, after)).resolves.toEqual([]);
+  });
+});
+
+describe('commitsBetween', () => {
+  it('reports the commits a turn made, which the file diff cannot show', async () => {
+    await initRepo(scratch);
+    await writeFile(join(scratch, 'index.ts'), 'export const a = 2;\n');
+    const repos = await discoverRepos(scratch);
+    const before = await snapshotWorkspace(repos);
+
+    // "commit this": history moves, the working tree does not.
+    git(scratch, ['commit', '-qam', 'Add version route']);
+
+    const after = await snapshotWorkspace(repos);
+    await expect(diffWorkspace(repos, before, after)).resolves.toEqual([]);
+    await expect(commitsBetween(repos, before, after)).resolves.toEqual([
+      { repo: '', sha: expect.stringMatching(/^[0-9a-f]{40}$/), subject: 'Add version route' },
+    ]);
+  });
+
+  it('counts a first commit in a repository that had none', async () => {
+    await mkdir(join(scratch, 'app'));
+    git(join(scratch, 'app'), ['init', '-q', '-b', 'main']);
+    await writeFile(join(scratch, 'app', 'index.ts'), 'v1\n');
+    const repos = await discoverRepos(scratch);
+    const before = await snapshotWorkspace(repos);
+
+    git(join(scratch, 'app'), ['add', '-A']);
+    git(join(scratch, 'app'), ['commit', '-qm', 'Initial commit']);
+
+    const after = await snapshotWorkspace(repos);
+    await expect(commitsBetween(repos, before, after)).resolves.toEqual([
+      { repo: 'app', sha: expect.any(String), subject: 'Initial commit' },
+    ]);
+  });
+
+  it('reports nothing when HEAD did not move', async () => {
+    await initRepo(scratch);
+    const repos = await discoverRepos(scratch);
+    const before = await snapshotWorkspace(repos);
+    await writeFile(join(scratch, 'index.ts'), 'edited, not committed\n');
+    const after = await snapshotWorkspace(repos);
+    await expect(commitsBetween(repos, before, after)).resolves.toEqual([]);
   });
 });
 

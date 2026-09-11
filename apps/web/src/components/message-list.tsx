@@ -1,7 +1,7 @@
 'use client';
 
 import type { PermissionDecision } from '@agent-console/contracts';
-import { ArrowDown, CircleAlert, FileDiff } from 'lucide-react';
+import { ArrowDown, CircleAlert, FileDiff, GitCommitHorizontal } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatCost, formatTokens } from '@/lib/format';
 import {
@@ -164,19 +164,33 @@ function SummaryRow({
   onShowFiles(turnIndex: number): void;
 }) {
   return (
-    <div className="flex items-center gap-2 px-0.5 text-xs text-muted-foreground">
-      <span>
-        {summary.files} file{summary.files === 1 ? '' : 's'} changed
-      </span>
-      <DiffStat added={summary.added} removed={summary.removed} className="text-xs" />
-      <span className="text-muted-foreground/50">·</span>
-      <button
-        onClick={() => onShowFiles(summary.turnIndex)}
-        className="flex cursor-pointer items-center gap-1 transition-colors hover:text-fg"
-      >
-        <FileDiff className="size-3" />
-        Show files
-      </button>
+    <div className="space-y-1 px-0.5 text-xs text-muted-foreground">
+      {summary.files > 0 ? (
+        <div className="flex items-center gap-2">
+          <span>
+            {summary.files} file{summary.files === 1 ? '' : 's'} changed
+          </span>
+          <DiffStat added={summary.added} removed={summary.removed} className="text-xs" />
+          <span className="text-muted-foreground/50">·</span>
+          <button
+            onClick={() => onShowFiles(summary.turnIndex)}
+            className="flex cursor-pointer items-center gap-1 transition-colors hover:text-fg"
+          >
+            <FileDiff className="size-3" />
+            Show files
+          </button>
+        </div>
+      ) : null}
+      {summary.commits.map((commit) => (
+        <div key={`${commit.repo}/${commit.sha}`} className="flex items-center gap-1.5">
+          <GitCommitHorizontal className="size-3" />
+          <span>
+            Committed <span className="text-fg">{commit.subject}</span>
+          </span>
+          {commit.repo ? <span className="text-muted-foreground/70">in {commit.repo}</span> : null}
+          <span className="font-mono text-muted-foreground/70">{commit.sha.slice(0, 7)}</span>
+        </div>
+      ))}
     </div>
   );
 }

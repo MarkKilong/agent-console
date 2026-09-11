@@ -1,4 +1,4 @@
-import type { DiffFile, Event, Usage } from '@agent-console/contracts';
+import type { Commit, DiffFile, Event, Usage } from '@agent-console/contracts';
 import { parseUnifiedDiff } from '@/lib/parse-unified-diff';
 
 /** `ts` is the timestamp of the event that created the item, for timestamps and elapsed times. */
@@ -33,6 +33,7 @@ export type ChatItem =
       files: number;
       added: number;
       removed: number;
+      commits: Commit[];
     }
   | { kind: 'error'; id: string; ts: number; message: string; code: string | undefined };
 
@@ -49,6 +50,7 @@ export type Turn = {
   files: DiffFile[];
   added: number;
   removed: number;
+  commits: Commit[];
   finishedAt?: number;
   stopReason?: string;
   usage?: Usage;
@@ -95,7 +97,14 @@ export function foldEvent(thread: ThreadState, event: Event): ThreadState {
       next.turnActive = true;
       next.turns = [
         ...thread.turns,
-        { index: thread.turns.length, startedAt: event.ts, files: [], added: 0, removed: 0 },
+        {
+          index: thread.turns.length,
+          startedAt: event.ts,
+          files: [],
+          added: 0,
+          removed: 0,
+          commits: [],
+        },
       ];
       break;
 
@@ -146,7 +155,7 @@ export function foldEvent(thread: ThreadState, event: Event): ThreadState {
       break;
 
     case 'diff_ready':
-      next.turns = attachDiff(thread.turns, event.files, event.ts);
+      next.turns = attachDiff(thread.turns, event.files, event.commits ?? [], event.ts);
       pushSummary(next.items, next.turns.at(-1), event.seq, event.ts);
       break;
 
@@ -177,7 +186,7 @@ export function foldEvent(thread: ThreadState, event: Event): ThreadState {
   return next;
 }
 
-function attachDiff(turns: Turn[], files: DiffFile[], ts: number): Turn[] {
+function attachDiff(turns: Turn[], files: DiffFile[], commits: Commit[], ts: number): Turn[] {
   const totals = files.reduce(
     (sum, file) => {
       const { added, removed } = parseUnifiedDiff(file.patch);
@@ -188,13 +197,14 @@ function attachDiff(turns: Turn[], files: DiffFile[], ts: number): Turn[] {
 
   const last = turns.at(-1);
   const updated: Turn = last
-    ? { ...last, files, ...totals }
-    : { index: 0, startedAt: ts, files, ...totals };
+    ? { ...last, files, commits, ...totals }
+    : { index: 0, startedAt: ts, files, commits, ...totals };
   return last ? [...turns.slice(0, -1), updated] : [updated];
 }
 
+/** A turn that touched no file but committed still did something worth a row. */
 function pushSummary(items: ChatItem[], turn: Turn | undefined, seq: number, ts: number): void {
-  if (!turn || turn.files.length === 0) return;
+  if (!turn || (turn.files.length === 0 && turn.commits.length === 0)) return;
   items.push({
     kind: 'summary',
     id: `summary-${seq}`,
@@ -203,6 +213,7 @@ function pushSummary(items: ChatItem[], turn: Turn | undefined, seq: number, ts:
     files: turn.files.length,
     added: turn.added,
     removed: turn.removed,
+    commits: turn.commits,
   });
 }
 
