@@ -1,7 +1,6 @@
 import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { AuthStatusData } from '@agent-console/contracts';
+import { readCredentials, updateCredentials } from './credentials.js';
 
 /** Narrow slice of `child_process.spawn`, so tests can point it at a fixture. */
 export type SpawnCli = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
@@ -125,24 +124,15 @@ export class ClaudeAuth {
   }
 
   setApiKey(key: string): void {
-    mkdirSync(this.options.dataDir, { recursive: true });
-    const path = this.credentialsPath();
-    rmSync(path, { force: true });
-    writeFileSync(path, JSON.stringify({ anthropicApiKey: key }), { mode: 0o600 });
+    updateCredentials(this.options.dataDir, { anthropicApiKey: key });
   }
 
   clearApiKey(): void {
-    rmSync(this.credentialsPath(), { force: true });
+    updateCredentials(this.options.dataDir, { anthropicApiKey: undefined });
   }
 
   apiKey(): string | undefined {
-    try {
-      const parsed: unknown = JSON.parse(readFileSync(this.credentialsPath(), 'utf8'));
-      const key = (parsed as { anthropicApiKey?: unknown }).anthropicApiKey;
-      return typeof key === 'string' && key ? key : undefined;
-    } catch {
-      return undefined;
-    }
+    return readCredentials(this.options.dataDir).anthropicApiKey || undefined;
   }
 
   close(): void {
@@ -155,10 +145,6 @@ export class ClaudeAuth {
       result.code === 0 ? parseVersion(result.stdout) : undefined,
     );
     return this.version;
-  }
-
-  private credentialsPath(): string {
-    return join(this.options.dataDir, 'credentials.json');
   }
 
   private killPending(): void {

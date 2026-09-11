@@ -7,7 +7,14 @@ import { WebSocket } from 'ws';
 import { lastFakeTurnParams } from '../../packages/runner/src/agent/fake-agent-adapter.js';
 import type { Config } from '../../packages/runner/src/config.js';
 import { startServer, type RunnerServer } from '../../packages/runner/src/server.js';
-import { connect, fakeClaudeAuth, makeRepo, testConfig, type TestClient } from './helpers.js';
+import {
+  connect,
+  fakeClaudeAuth,
+  fakeGithubAuth,
+  makeRepo,
+  testConfig,
+  type TestClient,
+} from './helpers.js';
 
 let repo: string;
 let config: Config;
@@ -410,6 +417,42 @@ describe('auth commands', () => {
 
     client.close();
   }, 20000);
+});
+
+describe('github commands', () => {
+  it('round-trips status, login start, cancel and logout', async () => {
+    await server.close();
+    const root = await mkdtemp(join(tmpdir(), 'agent-console-server-github-'));
+    server = await startServer(config, undefined, fakeGithubAuth(root));
+    const client = await connect(server.port, 'test-token');
+
+    client.send({ type: 'github_status', requestId: 'g1' });
+    const before = await client.waitForResponse('g1');
+    expect(before.ok && before.data).toMatchObject({ connected: false });
+
+    client.send({ type: 'github_login_start', requestId: 'g2' });
+    const started = await client.waitForResponse('g2');
+    expect(started.ok && started.data).toMatchObject({
+      userCode: 'ABCD-1234',
+      verificationUri: 'https://github.com/login/device',
+    });
+
+    client.send({ type: 'github_status', requestId: 'g3' });
+    const pending = await client.waitForResponse('g3');
+    expect(pending.ok && pending.data).toMatchObject({ pending: { userCode: 'ABCD-1234' } });
+
+    client.send({ type: 'github_login_cancel', requestId: 'g4' });
+    expect(await client.waitForResponse('g4')).toMatchObject({ ok: true, data: { ok: true } });
+
+    client.send({ type: 'github_logout', requestId: 'g5' });
+    expect(await client.waitForResponse('g5')).toMatchObject({ ok: true, data: { ok: true } });
+
+    client.send({ type: 'github_status', requestId: 'g6' });
+    const after = await client.waitForResponse('g6');
+    expect(after.ok && after.data).toEqual({ connected: false });
+
+    client.close();
+  }, 15000);
 });
 
 describe('terminals', () => {

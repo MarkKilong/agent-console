@@ -5,7 +5,11 @@ import { ClaudeAgentAdapter } from './claude-agent-adapter.js';
 import { CodexAgentAdapter } from './codex/codex-agent-adapter.js';
 import { FakeAgentAdapter } from './fake-agent-adapter.js';
 
-export function createAdapter(config: Config, apiKey?: () => string | undefined): AgentAdapter {
+export function createAdapter(
+  config: Config,
+  apiKey?: () => string | undefined,
+  githubToken?: () => string | undefined,
+): AgentAdapter {
   if (config.agent === 'fake') {
     return new FakeAgentAdapter();
   }
@@ -27,5 +31,6 @@ export function createAdapter(config: Config, apiKey?: () => string | undefined)
     cwd: config.cwd,
     permissionMode: config.permissionMode as PermissionMode,
     apiKey,
+    githubToken,
   });
 }

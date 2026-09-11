@@ -9,6 +9,7 @@ import {
 import { WebSocketServer, type WebSocket } from 'ws';
 import { createAdapter } from './agent/create-adapter.js';
 import { ClaudeAuth } from './auth/claude-auth.js';
+import { GitHubAuth } from './auth/github-auth.js';
 import type { Config } from './config.js';
 import { listWorkspaceFiles, readWorkspaceFile } from './files.js';
 import {
@@ -40,7 +41,11 @@ const AUTH_NOT_APPLICABLE: AuthStatusData = {
   loginPending: false,
 };
 
-type ServerDeps = TurnDeps & { auth: ClaudeAuth | undefined; terminals: TerminalManager };
+type ServerDeps = TurnDeps & {
+  auth: ClaudeAuth | undefined;
+  github: GitHubAuth;
+  terminals: TerminalManager;
+};
 
 /** A socket's own terminals: it may only drive these, and they die with it. */
 type Connection = { terminalIds: Set<string>; terminalEvents: TerminalEvents };
@@ -48,13 +53,17 @@ type Connection = { terminalIds: Set<string>; terminalEvents: TerminalEvents };
 export async function startServer(
   config: Config,
   auth: ClaudeAuth | undefined = createClaudeAuth(config),
+  // Unconditional, unlike Claude's: the device flow needs no CLI, only the data root.
+  github: GitHubAuth = new GitHubAuth({ dataDir: config.dataRoot }),
 ): Promise<RunnerServer> {
+  const githubToken = () => github.token();
   const deps: ServerDeps = {
     registry: new ThreadRegistry(new FileThreadStore(config.threadsDir), config.agent),
-    adapter: createAdapter(config, () => auth?.apiKey()),
+    adapter: createAdapter(config, () => auth?.apiKey(), githubToken),
     cwd: config.cwd,
     auth,
-    terminals: new TerminalManager(config.cwd),
+    github,
+    terminals: new TerminalManager(config.cwd, { githubToken }),
   };
 
   const http = createServer((request, response) => {
@@ -81,6 +90,7 @@ export async function startServer(
     terminalCount: () => deps.terminals.count,
     close: async () => {
       deps.auth?.close();
+      deps.github.close();
       deps.registry.stopActiveTurns();
       deps.terminals.closeAll();
       // Shutdown runs through here, so no agent subprocess outlives the runner.
@@ -256,6 +266,28 @@ async function dispatch(
     case 'auth_clear_api_key':
       await reply(socket, command.requestId, async () => {
         requireAuth(deps).clearApiKey();
+        return { ok: true };
+      });
+      return;
+
+    case 'github_status':
+      await reply(socket, command.requestId, async () => deps.github.status());
+      return;
+
+    case 'github_login_start':
+      await reply(socket, command.requestId, () => deps.github.loginStart());
+      return;
+
+    case 'github_login_cancel':
+      await reply(socket, command.requestId, async () => {
+        deps.github.cancel();
+        return { ok: true };
+      });
+      return;
+
+    case 'github_logout':
+      await reply(socket, command.requestId, async () => {
+        deps.github.logout();
         return { ok: true };
       });
       return;

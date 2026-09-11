@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { basename, isAbsolute } from 'node:path';
 import type { AvailableShell, TerminalOpenData, TerminalShell } from '@agent-console/contracts';
 import { spawn, type IPty } from 'node-pty';
+import { gitEnv } from './git/env.js';
 import { isExecutable, resolveOnPath } from './which.js';
 
 /** Git for Windows installs its bash here; `bash.exe` is rarely on PATH. */
@@ -72,11 +73,19 @@ export type TerminalEvents = {
 
 export type OpenTerminal = { shell?: TerminalShell; cols: number; rows: number };
 
+export type TerminalManagerOptions = {
+  /** Read per spawn, so a sign-in reaches the next terminal without a restart. */
+  githubToken?: () => string | undefined;
+};
+
 /** Every live pty in this runner. Terminals are per environment, never per thread. */
 export class TerminalManager {
   private readonly terminals = new Map<string, IPty>();
 
-  constructor(private readonly cwd: string) {}
+  constructor(
+    private readonly cwd: string,
+    private readonly options: TerminalManagerOptions = {},
+  ) {}
 
   /** Live terminals; the server closes a socket's own on disconnect. */
   get count(): number {
@@ -90,7 +99,11 @@ export class TerminalManager {
       cols: request.cols,
       rows: request.rows,
       cwd: this.cwd,
-      env: { ...process.env, TERM: 'xterm-256color' },
+      env: {
+        ...process.env,
+        TERM: 'xterm-256color',
+        ...gitEnv(this.options.githubToken?.()),
+      },
     });
 
     const terminalId = randomUUID();
