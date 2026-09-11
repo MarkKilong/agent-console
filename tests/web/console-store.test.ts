@@ -36,6 +36,22 @@ describe('thread meta', () => {
     expect(useConsoleStore.getState().threadMeta[id]?.branch).toBeUndefined();
   });
 
+  it('renames the thread on thread_titled, over the name the prompt gave it', () => {
+    const id = newThreadId();
+    useConsoleStore.getState().notePrompt(id, 'fix this');
+
+    const titled = {
+      type: 'thread_titled',
+      title: 'Fixing the flaky test',
+      seq: 1,
+      threadId: id,
+      ts: 0,
+    } as Event;
+
+    useConsoleStore.getState().applyEvent(titled);
+    expect(useConsoleStore.getState().threadMeta[id]?.title).toBe('Fixing the flaky test');
+  });
+
   it('takes the branch off turn_started', () => {
     const id = newThreadId();
     const started = {
