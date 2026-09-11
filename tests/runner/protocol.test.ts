@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION } from '@agent-console/contracts';
+import { PROTOCOL_VERSION, type Hello } from '@agent-console/contracts';
 import { describe, expect, it } from 'vitest';
 import {
   decodeCommand,
@@ -47,11 +47,13 @@ describe('encode', () => {
     const response = { requestId: 'r1', ok: false, error: 'nope' } as const;
     expect(JSON.parse(encodeResponse(response))).toEqual({ kind: 'response', response });
 
-    const hello = {
+    const hello: Hello = {
       kind: 'hello',
       protocolVersion: PROTOCOL_VERSION,
       runnerVersion: '0.1.0',
-    } as const;
+      platform: 'linux',
+      shells: [{ kind: 'bash', title: 'bash' }],
+    };
     expect(JSON.parse(encode(hello))).toEqual(hello);
   });
 });

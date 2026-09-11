@@ -18,6 +18,7 @@ import {
   snapshotWorkspace,
 } from './git/workspace.js';
 import { decodeCommand, encode, encodeEvent, encodeResponse } from './protocol.js';
+import { availableShells, TerminalManager, type TerminalEvents } from './terminals.js';
 import { FileThreadStore } from './thread-store.js';
 import { ThreadRegistry } from './threads.js';
 import { startTurn, type TurnDeps } from './turns.js';
@@ -26,6 +27,8 @@ export const RUNNER_VERSION = '0.1.0';
 
 export type RunnerServer = {
   port: number;
+  /** Live ptys across every socket; the terminal tests assert it drains. */
+  terminalCount(): number;
   close(): Promise<void>;
 };
 
@@ -37,7 +40,10 @@ const AUTH_NOT_APPLICABLE: AuthStatusData = {
   loginPending: false,
 };
 
-type ServerDeps = TurnDeps & { auth: ClaudeAuth | undefined };
+type ServerDeps = TurnDeps & { auth: ClaudeAuth | undefined; terminals: TerminalManager };
+
+/** A socket's own terminals: it may only drive these, and they die with it. */
+type Connection = { terminalIds: Set<string>; terminalEvents: TerminalEvents };
 
 export async function startServer(
   config: Config,
@@ -48,6 +54,7 @@ export async function startServer(
     adapter: createAdapter(config, () => auth?.apiKey()),
     cwd: config.cwd,
     auth,
+    terminals: new TerminalManager(config.cwd),
   };
 
   const http = createServer((request, response) => {
@@ -71,9 +78,11 @@ export async function startServer(
   const port = await listen(http, config.port);
   return {
     port,
+    terminalCount: () => deps.terminals.count,
     close: async () => {
       deps.auth?.close();
       deps.registry.stopActiveTurns();
+      deps.terminals.closeAll();
       // Shutdown runs through here, so no agent subprocess outlives the runner.
       await deps.adapter.close?.();
       for (const client of wss.clients) client.terminate();
@@ -89,9 +98,26 @@ export async function startServer(
 
 function handleConnection(socket: WebSocket, deps: ServerDeps): void {
   const subscriptions = new Map<string, () => void>();
+  const connection: Connection = {
+    terminalIds: new Set(),
+    terminalEvents: {
+      onData: (terminalId, data) =>
+        send(socket, encode({ kind: 'terminal_output', terminalId, data })),
+      onExit: (terminalId, exitCode) => {
+        connection.terminalIds.delete(terminalId);
+        send(socket, encode({ kind: 'terminal_exit', terminalId, exitCode }));
+      },
+    },
+  };
 
   socket.send(
-    encode({ kind: 'hello', protocolVersion: PROTOCOL_VERSION, runnerVersion: RUNNER_VERSION }),
+    encode({
+      kind: 'hello',
+      protocolVersion: PROTOCOL_VERSION,
+      runnerVersion: RUNNER_VERSION,
+      platform: process.platform,
+      shells: availableShells(),
+    }),
   );
 
   socket.on('message', (data) => {
@@ -100,12 +126,15 @@ function handleConnection(socket: WebSocket, deps: ServerDeps): void {
       socket.send(encodeResponse({ requestId: 'unknown', ok: false, error: decoded.error }));
       return;
     }
-    void dispatch(decoded.command, socket, deps, subscriptions);
+    void dispatch(decoded.command, socket, deps, subscriptions, connection);
   });
 
   socket.on('close', () => {
     for (const unsubscribe of subscriptions.values()) unsubscribe();
     subscriptions.clear();
+    // A terminal belongs to its socket; reattaching after a reload is not a thing yet.
+    for (const terminalId of connection.terminalIds) deps.terminals.close(terminalId);
+    connection.terminalIds.clear();
   });
 }
 
@@ -114,6 +143,7 @@ async function dispatch(
   socket: WebSocket,
   deps: ServerDeps,
   subscriptions: Map<string, () => void>,
+  connection: Connection,
 ): Promise<void> {
   const { registry } = deps;
 
@@ -228,6 +258,34 @@ async function dispatch(
         return { ok: true };
       });
       return;
+
+    case 'terminal_open':
+      await reply(socket, command.requestId, async () => {
+        const opened = deps.terminals.open(command, connection.terminalEvents);
+        connection.terminalIds.add(opened.terminalId);
+        return opened;
+      });
+      return;
+
+    // The three below only ever touch this socket's own terminals, so an id from a
+    // socket that has since closed is ignored rather than reaching someone else's shell.
+    case 'terminal_input':
+      if (connection.terminalIds.has(command.terminalId)) {
+        deps.terminals.write(command.terminalId, command.data);
+      }
+      return;
+
+    case 'terminal_resize':
+      if (connection.terminalIds.has(command.terminalId)) {
+        deps.terminals.resize(command.terminalId, command.cols, command.rows);
+      }
+      return;
+
+    case 'terminal_close':
+      if (connection.terminalIds.delete(command.terminalId)) {
+        deps.terminals.close(command.terminalId);
+      }
+      return;
   }
 }
 
@@ -274,7 +332,12 @@ async function reply(
       error: error instanceof Error ? error.message : String(error),
     };
   }
-  if (socket.readyState === socket.OPEN) socket.send(encodeResponse(response));
+  send(socket, encodeResponse(response));
+}
+
+/** A pty can outlive the socket's last gasp by a tick, so never send into a closed one. */
+function send(socket: WebSocket, raw: string): void {
+  if (socket.readyState === socket.OPEN) socket.send(raw);
 }
 
 function isAuthorized(request: IncomingMessage, token: string): boolean {
