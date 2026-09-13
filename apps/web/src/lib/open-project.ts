@@ -11,15 +11,19 @@ export async function openProject(project: Project): Promise<void> {
   const response = await fetch('/api/environments', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ repoPath: project.repoPath }),
+    body: JSON.stringify(
+      project.repoUrl ? { repoUrl: project.repoUrl } : { repoPath: project.repoPath },
+    ),
   });
   const body = (await response.json()) as
-    { id: string; url: string; token: string } | { error: string };
+    { id: string; url: string; token: string; repoPath?: string } | { error: string };
   if (!response.ok || !('id' in body)) {
     throw new Error('error' in body ? body.error : 'Could not open the environment');
   }
 
-  useConsoleStore.getState().openEnvironment({ ...body, repoPath: project.repoPath });
+  // A remote environment reports where it put the clone; a local one is the folder itself.
+  const { repoPath = project.repoPath, ...environment } = body;
+  useConsoleStore.getState().openEnvironment({ ...environment, repoPath });
   useProjectsStore.getState().setActive(project.id);
 }
 

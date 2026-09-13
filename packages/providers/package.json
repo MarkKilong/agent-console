@@ -8,6 +8,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./local": {
+      "types": "./dist/local/local-provider.d.ts",
+      "import": "./dist/local/local-provider.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -19,7 +23,8 @@
   },
   "dependencies": {
     "@agent-console/contracts": "workspace:*",
-    "@agent-console/runner": "workspace:*"
+    "@agent-console/runner": "workspace:*",
+    "@daytonaio/sdk": "^0.211.2"
   },
   "devDependencies": {
     "tsx": "^4.23.13"

@@ -24,7 +24,7 @@ describe('LocalProvider', () => {
     const repoPath = await mkdtemp(join(tmpdir(), 'agent-console-local-'));
     execFileSync('git', ['init', '-q'], { cwd: repoPath });
 
-    const provider = createProvider('local');
+    const provider = await createProvider('local');
     const handle = await provider.create({ repoPath, env: { RUNNER_AGENT: 'fake' } });
 
     expect(handle.kind).toBe('local');
@@ -47,7 +47,7 @@ describe('LocalProvider', () => {
     const repoPath = await mkdtemp(join(tmpdir(), 'agent-console-local-'));
     execFileSync('git', ['init', '-q'], { cwd: repoPath });
 
-    const provider = createProvider('local');
+    const provider = await createProvider('local');
     const started = Date.now();
     await expect(
       provider.create({
@@ -63,7 +63,7 @@ describe('LocalProvider', () => {
     const repoPath = await mkdtemp(join(tmpdir(), 'agent-console-local-'));
     execFileSync('git', ['init', '-q'], { cwd: repoPath });
 
-    const provider = createProvider('local');
+    const provider = await createProvider('local');
     // One handle means one Environment record, and each of those spawns one child.
     const [first, second] = await Promise.all([
       provider.create({ repoPath, env: { RUNNER_AGENT: 'fake' } }),
@@ -83,7 +83,7 @@ describe('LocalProvider', () => {
     const repoPath = await mkdtemp(join(tmpdir(), 'agent-console-local-'));
     execFileSync('git', ['init', '-q'], { cwd: repoPath });
 
-    const provider = createProvider('local');
+    const provider = await createProvider('local');
     const first = await provider.create({ repoPath, env: { RUNNER_AGENT: 'fake' } });
     // A different spelling of the same folder must still find it.
     const second = await provider.create({
@@ -101,7 +101,7 @@ describe('LocalProvider', () => {
     const repoPath = await mkdtemp(join(tmpdir(), 'agent-console-local-'));
     execFileSync('git', ['init', '-q'], { cwd: repoPath });
 
-    const provider = createProvider('local');
+    const provider = await createProvider('local');
     const first = await provider.create({ repoPath, env: { RUNNER_AGENT: 'fake' } });
     const firstEndpoint = await provider.endpoint(first.id);
 
@@ -124,7 +124,7 @@ describe('LocalProvider', () => {
   }, 45_000);
 
   it('names a missing folder instead of blaming the node executable', async () => {
-    const provider = createProvider('local');
+    const provider = await createProvider('local');
     const repoPath = join(tmpdir(), `agent-console-missing-${Date.now()}`);
     await expect(provider.create({ repoPath, env: { RUNNER_AGENT: 'fake' } })).rejects.toThrow(
       `Folder does not exist: ${repoPath}`,
@@ -132,14 +132,14 @@ describe('LocalProvider', () => {
   });
 
   it('rejects a spec the local provider cannot satisfy', async () => {
-    const provider = createProvider('local');
+    const provider = await createProvider('local');
     await expect(provider.create({ repoUrl: 'https://example.com/repo.git' })).rejects.toThrow(
       /repoPath/,
     );
   });
 
   it('rejects an unknown environment id', async () => {
-    const provider = createProvider('local');
+    const provider = await createProvider('local');
     await expect(provider.status('nope')).rejects.toThrow(/Unknown environment/);
   });
 });

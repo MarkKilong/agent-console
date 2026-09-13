@@ -8,7 +8,8 @@ const nextConfig: NextConfig = {
   // The dev-tools indicator sits on top of the sidebar's settings button.
   devIndicators: false,
   // Kept out of any server bundle so their native/child-process behaviour survives.
-  serverExternalPackages: ['@anthropic-ai/claude-agent-sdk', 'ws'],
+  // The Daytona SDK requires its own modules dynamically, which a bundle would lose.
+  serverExternalPackages: ['@anthropic-ai/claude-agent-sdk', 'ws', '@daytonaio/sdk'],
 };
 
 export default nextConfig;

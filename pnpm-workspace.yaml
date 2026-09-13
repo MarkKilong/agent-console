@@ -8,3 +8,5 @@ allowBuilds:
   # node-pty ships prebuilt binaries for win32/darwin; elsewhere its install script
   # compiles the binding, so it has to be allowed to run.
   node-pty: true
+  # Pulled in by the Daytona SDK; its postinstall only tidies its own package.
+  protobufjs: false

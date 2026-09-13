@@ -4,6 +4,7 @@ import { ArrowLeft, CircleAlert, FolderPlus, Link as LinkIcon } from 'lucide-rea
 import Link from 'next/link';
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
+import { canOpenLocalFolders } from '@/lib/deployment';
 import { openProject } from '@/lib/open-project';
 import {
   cloneRepository,
@@ -32,6 +33,10 @@ const SOURCES = [
   { id: 'local', title: 'Local folder', subtitle: 'Browse a folder on disk', icon: FolderPlus },
   { id: 'git', title: 'Git URL', subtitle: 'Clone from a remote URL', icon: LinkIcon },
 ] as const;
+
+const AVAILABLE_SOURCES = canOpenLocalFolders
+  ? SOURCES
+  : SOURCES.filter((source) => source.id === 'git');
 
 /** Pick a source, then fill it in: a folder already here, or one cloned from a URL. */
 export function AddProjectDialog({ open, onClose }: Props) {
@@ -76,7 +81,7 @@ function SourceList({ onPick, onClose }: { onPick(step: Step): void; onClose(): 
   const [index, setIndex] = useState(0);
 
   const query = search.trim().toLowerCase();
-  const rows = SOURCES.filter(
+  const rows = AVAILABLE_SOURCES.filter(
     (source) =>
       !query ||
       source.title.toLowerCase().includes(query) ||
@@ -254,6 +259,7 @@ function GitForm({
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
+    if (!canOpenLocalFolders) return;
     let cancelled = false;
     void (async () => {
       const base = await defaultCloneParent().catch(() => '');
@@ -277,13 +283,18 @@ function GitForm({
   const showGitHubLink = code === 'auth' || (code === 'not_found' && isGitHubUrl(url));
 
   async function submit() {
-    if (!url.trim() || !parent || busy) return;
+    if (!url.trim() || (canOpenLocalFolders && !parent) || busy) return;
     setBusy(true);
     setError(null);
     try {
-      const cloned = await cloneRepository({ url, parent, name: name.trim() || undefined });
-      setCloneParent(parent);
-      await addAndOpen(cloned.path, name);
+      if (!canOpenLocalFolders) {
+        // The provider clones on open, so the project is just the URL.
+        await addAndOpen(url.trim(), name.trim() || repoNameFromUrl(url), url.trim());
+      } else {
+        const cloned = await cloneRepository({ url, parent, name: name.trim() || undefined });
+        setCloneParent(parent);
+        await addAndOpen(cloned.path, name);
+      }
       onDone();
     } catch (cause) {
       setError(cause instanceof Error ? cause : new Error(String(cause)));
@@ -317,33 +328,37 @@ function GitForm({
           />
         </Field>
 
-        <Field label="Clone into">
-          <div className="flex gap-2">
-            <div className="flex h-8 min-w-0 flex-1 items-center rounded-lg border border-input px-2.5 font-mono text-xs">
-              <span className="truncate text-muted-foreground">{root}</span>
-              <span className="shrink-0">{subfolderOf(root, parent)}</span>
-            </div>
-            <Button variant="outline" disabled={!parent} onClick={() => setBrowsing(!browsing)}>
-              Browse
-            </Button>
-          </div>
-        </Field>
+        {canOpenLocalFolders ? (
+          <>
+            <Field label="Clone into">
+              <div className="flex gap-2">
+                <div className="flex h-8 min-w-0 flex-1 items-center rounded-lg border border-input px-2.5 font-mono text-xs">
+                  <span className="truncate text-muted-foreground">{root}</span>
+                  <span className="shrink-0">{subfolderOf(root, parent)}</span>
+                </div>
+                <Button variant="outline" disabled={!parent} onClick={() => setBrowsing(!browsing)}>
+                  Browse
+                </Button>
+              </div>
+            </Field>
 
-        {browsing ? (
-          <FolderBrowser
-            start={parent}
-            scope="clone"
-            onPick={(picked) => {
-              setParent(picked);
-              setBrowsing(false);
-            }}
-          />
-        ) : null}
+            {browsing ? (
+              <FolderBrowser
+                start={parent}
+                scope="clone"
+                onPick={(picked) => {
+                  setParent(picked);
+                  setBrowsing(false);
+                }}
+              />
+            ) : null}
 
-        {parent && folder ? (
-          <p className="truncate font-mono text-[11px] text-muted-foreground">
-            {joinPath(parent, folder)}
-          </p>
+            {parent && folder ? (
+              <p className="truncate font-mono text-[11px] text-muted-foreground">
+                {joinPath(parent, folder)}
+              </p>
+            ) : null}
+          </>
         ) : null}
 
         {error ? (
@@ -374,11 +389,17 @@ function GitForm({
         <Hint keys={['Esc']} label="Close" />
         <Button
           className="ml-auto"
-          disabled={busy || !url.trim() || !parent}
+          disabled={busy || !url.trim() || (canOpenLocalFolders && !parent)}
           onClick={() => void submit()}
         >
           {busy ? <Spinner /> : null}
-          {busy ? 'Cloning…' : 'Clone'}
+          {busy
+            ? canOpenLocalFolders
+              ? 'Cloning…'
+              : 'Opening…'
+            : canOpenLocalFolders
+              ? 'Clone'
+              : 'Add project'}
         </Button>
       </Footer>
     </div>
@@ -449,9 +470,9 @@ function Kbd({ children }: { children: ReactNode }) {
 }
 
 /** Adds the project and opens it, undoing the add when the folder will not open. */
-async function addAndOpen(repoPath: string, name: string): Promise<void> {
+async function addAndOpen(repoPath: string, name: string, repoUrl?: string): Promise<void> {
   const { addProject, removeProject } = useProjectsStore.getState();
-  const project = addProject(repoPath, name);
+  const project = addProject(repoPath, name, repoUrl);
   try {
     await openProject(project);
   } catch (cause) {

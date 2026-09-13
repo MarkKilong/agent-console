@@ -329,6 +329,51 @@ A quick client, if you would rather not write one:
 npx wscat -c "ws://127.0.0.1:4310/?token=dev"
 ```
 
+## Deploy: web on Vercel, runner on Daytona
+
+Two targets, one repo. The runner runs inside a Daytona sandbox created from a snapshot;
+the web app runs on Vercel and only creates, resolves and deletes sandboxes.
+
+### Runner snapshot
+
+Daytona builds `packages/runner/Dockerfile` itself; nothing runs locally. The SDK uploads
+the Dockerfile's COPY sources verbatim, so stage them from git-tracked files (a local
+`node_modules` would overwrite the one pnpm creates in the image). With a key that has
+write on snapshots:
+
+```ts
+import { Daytona, Image } from '@daytonaio/sdk';
+await new Daytona().snapshot.create(
+  {
+    name: 'agent-console-runner:0.1.2',
+    image: Image.fromDockerfile('<staged>/Dockerfile'),
+    resources: { cpu: 2, memory: 4, disk: 10 },
+  },
+  { onLogs: console.log },
+);
+```
+
+Bump the tag per build; Daytona rejects `:latest`. The image's CMD is not used: the provider
+starts the runner in a process session after cloning the repository to `/workspace/repo`.
+
+### Web app
+
+Set `NEXT_PUBLIC_ENV_PROVIDER=daytona` and the app opens repositories by URL only: the Add
+project dialog offers just the Git source, and `POST /api/environments` takes `{repoUrl,
+branch?}`. Each open creates a sandbox (public preview port, the runner token is the guard),
+which Daytona stops after 15 idle minutes and deletes a day later. Variables:
+
+| Variable                   | Meaning                                             |
+| -------------------------- | --------------------------------------------------- |
+| `NEXT_PUBLIC_ENV_PROVIDER` | `daytona`; anything else is the local provider.     |
+| `DAYTONA_API_KEY`          | Needs write and delete on sandboxes, nothing more.  |
+| `DAYTONA_SNAPSHOT`         | The snapshot name above.                            |
+| `RUNNER_AGENT`             | `fake` runs the deployment without any credentials. |
+
+On Vercel: Root Directory `apps/web`, `ENABLE_EXPERIMENTAL_COREPACK=1` so the pinned pnpm
+runs. The API hands out runner tokens and has no auth of its own, so keep Deployment
+Protection on unless the deployment is meant to be open.
+
 ## Docker
 
 `packages/runner/Dockerfile` builds a `node:24-slim` image with git and Claude Code installed
