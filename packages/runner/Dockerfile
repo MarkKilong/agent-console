@@ -5,7 +5,7 @@
 FROM node:24-slim
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git \
+  && apt-get install -y --no-install-recommends ca-certificates curl git python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
 # Native installer, not the npm shim: the SDK spawns the binary without a shell.
@@ -14,8 +14,7 @@ ENV PATH="/root/.local/bin:${PATH}"
 ENV CLAUDE_BINARY="/root/.local/bin/claude"
 
 # node-pty (the terminal) ships prebuilt bindings for win32 and darwin only, so on this
-# image its install script falls through to `node-gyp rebuild`. If that build fails here,
-# add `python3 make g++` to the apt line above rather than pinning an older node-pty.
+# image its install script falls through to `node-gyp rebuild`; python3/make/g++ above are for it.
 RUN corepack enable
 
 WORKDIR /app

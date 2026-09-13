@@ -1,0 +1,8 @@
+# Keep the build context to sources; the Dockerfile installs and builds inside the image.
+node_modules
+**/node_modules
+**/dist
+.git
+.claude
+tmp
+apps/web/.next
