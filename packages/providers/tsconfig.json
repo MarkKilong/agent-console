@@ -6,7 +6,9 @@
     // live in the build config: emitting a file from outside rootDir is an error.
     "paths": {
       "@agent-console/contracts": ["../contracts/src/index.ts"],
-      "@agent-console/runner": ["../runner/src/index.ts"]
+      "@agent-console/runner": ["../runner/src/index.ts"],
+      // The registry's self-reference; without dist it would otherwise not resolve.
+      "@agent-console/providers/local": ["./src/local/local-provider.ts"]
     }
   },
   "include": ["src/**/*.ts"]

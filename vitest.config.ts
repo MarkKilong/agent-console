@@ -9,6 +9,10 @@ export default defineConfig({
       '@agent-console/contracts': fileURLToPath(
         new URL('packages/contracts/src/index.ts', import.meta.url),
       ),
+      // The registry loads the local provider by this self-reference, which points at dist.
+      '@agent-console/providers/local': fileURLToPath(
+        new URL('packages/providers/src/local/local-provider.ts', import.meta.url),
+      ),
       // The web app's own alias, so its modules can be tested where they sit.
       '@': fileURLToPath(new URL('apps/web/src', import.meta.url)),
     },

@@ -1,11 +1,16 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-/** A project is a folder on this machine; removing one never touches the folder. */
+/**
+ * A project is a folder on this machine, or — on a sandbox deployment — a repository
+ * URL cloned afresh each time it opens; removing one never touches the folder.
+ */
 export type Project = {
   id: string;
   name: string;
   repoPath: string;
+  /** Set for projects the environment provider clones itself. */
+  repoUrl?: string;
   addedAt: number;
 };
 
@@ -14,7 +19,7 @@ type ProjectsStore = {
   activeProjectId: string | null;
   /** The folder the last clone landed in, so the next one is offered the same place. */
   cloneParent: string | null;
-  addProject(repoPath: string, name?: string): Project;
+  addProject(repoPath: string, name?: string, repoUrl?: string): Project;
   removeProject(projectId: string): void;
   setActive(projectId: string | null): void;
   setCloneParent(path: string): void;
@@ -27,11 +32,12 @@ export const useProjectsStore = create<ProjectsStore>()(
       activeProjectId: null,
       cloneParent: null,
 
-      addProject: (repoPath, name) => {
+      addProject: (repoPath, name, repoUrl) => {
         const project: Project = {
           id: globalThis.crypto.randomUUID(),
           name: name?.trim() || folderName(repoPath),
           repoPath: repoPath.trim(),
+          ...(repoUrl ? { repoUrl: repoUrl.trim() } : {}),
           addedAt: Date.now(),
         };
         set((state) => ({ projects: [...state.projects, project] }));

@@ -13,6 +13,7 @@
     "@agent-console/contracts": "workspace:*",
     "@agent-console/providers": "workspace:*",
     "@agent-console/runner": "workspace:*",
+    "@daytonaio/sdk": "^0.211.2",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.1",
