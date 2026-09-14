@@ -30,7 +30,7 @@ const CREATE_TIMEOUT_S = 180;
 const HEALTH_TIMEOUT_MS = 60_000;
 /** Idle minutes before Daytona stops the sandbox, and stopped minutes before it deletes it. */
 const AUTO_STOP_MIN = 15;
-const AUTO_DELETE_MIN = 24 * 60;
+const AUTO_DELETE_MIN = 2 * 60;
 /** A sign-in lasts seconds, so an abandoned auth sandbox stops soon and is deleted at once. */
 const AUTH_AUTO_STOP_MIN = 5;
 const AUTH_AUTO_DELETE_MIN = 0;
@@ -110,34 +110,41 @@ export class DaytonaProvider implements EnvironmentProvider {
     const repoUrl = parsed.repoUrl;
 
     const token = randomUUID();
-    const sandbox = await (
-      await this.daytona()
-    ).create(
-      {
-        snapshot: this.options.snapshot,
-        // The browser opens the WebSocket itself and cannot send Daytona's preview
-        // header, so the port is public and the runner token is the only guard.
-        public: true,
-        envVars: {
-          ...parsed.env,
-          HOME: DAYTONA_HOME,
-          CLAUDE_CONFIG_DIR: DAYTONA_CLAUDE_CONFIG_DIR,
-          AGENT_CONSOLE_DATA_DIR: DAYTONA_DATA_DIR,
-          RUNNER_TOKEN: token,
-          RUNNER_PORT: String(RUNNER_PORT),
-          RUNNER_CWD: DAYTONA_WORKSPACE,
-        },
-        labels: {
-          [TOKEN_LABEL]: token,
-          ...(auth ? { [KIND_LABEL]: 'auth' } : {}),
-          ...(repoUrl ? { 'agent-console/repo': repoUrl } : {}),
-          ...(parsed.name ? { [NAME_LABEL]: parsed.name } : {}),
-        },
-        autoStopInterval: auth ? AUTH_AUTO_STOP_MIN : AUTO_STOP_MIN,
-        autoDeleteInterval: auth ? AUTH_AUTO_DELETE_MIN : AUTO_DELETE_MIN,
+    const client = await this.daytona();
+    const params = {
+      snapshot: this.options.snapshot,
+      // The browser opens the WebSocket itself and cannot send Daytona's preview
+      // header, so the port is public and the runner token is the only guard.
+      public: true,
+      envVars: {
+        ...parsed.env,
+        HOME: DAYTONA_HOME,
+        CLAUDE_CONFIG_DIR: DAYTONA_CLAUDE_CONFIG_DIR,
+        AGENT_CONSOLE_DATA_DIR: DAYTONA_DATA_DIR,
+        RUNNER_TOKEN: token,
+        RUNNER_PORT: String(RUNNER_PORT),
+        RUNNER_CWD: DAYTONA_WORKSPACE,
       },
-      { timeout: CREATE_TIMEOUT_S },
-    );
+      labels: {
+        [TOKEN_LABEL]: token,
+        ...(auth ? { [KIND_LABEL]: 'auth' } : {}),
+        ...(repoUrl ? { 'agent-console/repo': repoUrl } : {}),
+        ...(parsed.name ? { [NAME_LABEL]: parsed.name } : {}),
+      },
+      autoStopInterval: auth ? AUTH_AUTO_STOP_MIN : AUTO_STOP_MIN,
+      autoDeleteInterval: auth ? AUTH_AUTO_DELETE_MIN : AUTO_DELETE_MIN,
+    };
+
+    let sandbox: DaytonaSandbox;
+    try {
+      sandbox = await client.create(params, { timeout: CREATE_TIMEOUT_S });
+    } catch (error) {
+      // A stopped sandbox still holds its disk, so the cap is reached with nothing running;
+      // the memory cap is left alone, since freeing it would stop a sandbox someone is using.
+      const capped = error instanceof Error && error.message.includes('Total disk limit exceeded');
+      if (!capped || !(await evictOldestStopped(client))) throw error;
+      sandbox = await client.create(params, { timeout: CREATE_TIMEOUT_S });
+    }
 
     try {
       if (repoUrl) await sandbox.git.clone(repoUrl, DAYTONA_WORKSPACE, parsed.branch);
@@ -257,6 +264,26 @@ export class DaytonaProvider implements EnvironmentProvider {
       : import('@daytonaio/sdk').then((sdk) => new sdk.Daytona() as unknown as DaytonaClient);
     return this.client;
   }
+}
+
+/**
+ * Deletes the oldest stopped project sandbox this app made, which frees the one disk slot a
+ * create needs; false when there is none to take, so the caller can rethrow the cap error.
+ * Running ones belong to whoever is using them and auth ones to the sweep.
+ */
+async function evictOldestStopped(client: DaytonaClient): Promise<boolean> {
+  let oldest: { sandbox: DaytonaSandbox; created: number } | undefined;
+  for await (const sandbox of client.list()) {
+    if (!sandbox.labels[TOKEN_LABEL] || sandbox.labels[KIND_LABEL]) continue;
+    if (statusOf(sandbox.state) !== 'stopped') continue;
+    const created = Date.parse(sandbox.createdAt ?? '');
+    // An unreadable age cannot be compared, and a sandbox is not worth deleting on a guess.
+    if (!Number.isFinite(created)) continue;
+    if (!oldest || created < oldest.created) oldest = { sandbox, created };
+  }
+  if (!oldest) return false;
+  await oldest.sandbox.delete();
+  return true;
 }
 
 /** Writes the spec's files; the upload API creates missing parent directories itself. */
