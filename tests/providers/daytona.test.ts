@@ -262,13 +262,96 @@ describe('DaytonaProvider', () => {
     expect(params.labels['agent-console/kind']).toBeUndefined();
     // A project lives as long as any other, not the auth sandbox's few minutes.
     expect(params.autoStopInterval).toBe(15);
-    expect(params.autoDeleteInterval).toBe(24 * 60);
+    expect(params.autoDeleteInterval).toBe(2 * 60);
     expect(sandboxes.get('sbx-1')!.calls).toEqual([
       `mkdir ${DAYTONA_WORKSPACE} 755`,
       `run git init in ${DAYTONA_WORKSPACE}`,
       'session runner',
       'exec runner cd /app/packages/runner && IS_SANDBOX=1 node dist/main.js async=true',
     ]);
+  });
+
+  it('evicts the oldest stopped project sandbox when the disk cap is hit, and creates again', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{"ok":true}', { status: 200 })),
+    );
+    const { client, sandboxes, add } = fakeClient();
+    const provider = new DaytonaProvider({ snapshot: 'runner:1', client });
+
+    const oldest = add('old', { 'agent-console/token': 'a' }, 5 * 3_600_000);
+    oldest.state = 'stopped';
+    const newer = add('new', { 'agent-console/token': 'b' }, 3_600_000);
+    newer.state = 'stopped';
+    const running = add('running', { 'agent-console/token': 'c' }, 9 * 3_600_000);
+    const auth = add(
+      'auth',
+      { 'agent-console/token': 'd', 'agent-console/kind': 'auth' },
+      9 * 3_600_000,
+    );
+    auth.state = 'stopped';
+
+    let attempts = 0;
+    const create = client.create;
+    client.create = async (params, options) => {
+      attempts += 1;
+      if (attempts === 1)
+        throw new Error('Total disk limit exceeded. Maximum allowed: 30GiB.\nUsed: 30GiB.');
+      return create(params, options);
+    };
+
+    const handle = await provider.create({ name: 'scratch' });
+
+    expect(attempts).toBe(2);
+    expect(handle).toEqual({ id: 'sbx-1', kind: 'daytona', status: 'running' });
+    expect(sandboxes.get('sbx-1')!.calls).toContain(`run git init in ${DAYTONA_WORKSPACE}`);
+    // Only the oldest stopped project sandbox goes; one freed slot is enough for one create.
+    expect(oldest.calls).toEqual(['delete']);
+    expect(newer.calls).toEqual([]);
+    expect(running.calls).toEqual([]);
+    expect(auth.calls).toEqual([]);
+  });
+
+  it('rethrows the disk cap when there is no stopped project sandbox to evict', async () => {
+    const { client, add } = fakeClient();
+    const provider = new DaytonaProvider({ snapshot: 'runner:1', client });
+    const running = add('running', { 'agent-console/token': 'a' }, 9 * 3_600_000);
+
+    let attempts = 0;
+    client.create = async () => {
+      attempts += 1;
+      throw new Error('Total disk limit exceeded. Maximum allowed: 30GiB.\nUsed: 30GiB.');
+    };
+
+    await expect(provider.create({ name: 'scratch' })).rejects.toThrow(/Total disk limit exceeded/);
+    expect(attempts).toBe(1);
+    expect(running.calls).toEqual([]);
+  });
+
+  it('passes the memory cap through, since freeing it would stop a sandbox in use', async () => {
+    const { client, add } = fakeClient();
+    const provider = new DaytonaProvider({ snapshot: 'runner:1', client });
+    const stopped = add('old', { 'agent-console/token': 'a' }, 9 * 3_600_000);
+    stopped.state = 'stopped';
+
+    let listed = 0;
+    const list = client.list;
+    client.list = (query) => {
+      listed += 1;
+      return list(query);
+    };
+    let attempts = 0;
+    client.create = async () => {
+      attempts += 1;
+      throw new Error('Total memory limit exceeded. Maximum allowed: 10GiB.\nUsed: 10GiB.');
+    };
+
+    await expect(provider.create({ name: 'scratch' })).rejects.toThrow(
+      /Total memory limit exceeded/,
+    );
+    expect(attempts).toBe(1);
+    expect(listed).toBe(0);
+    expect(stopped.calls).toEqual([]);
   });
 
   it('wakes a stopped sandbox and relaunches the runner it lost with it', async () => {
