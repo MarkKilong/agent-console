@@ -8,10 +8,16 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl git python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
-# Native installer, not the npm shim: the SDK spawns the binary without a shell.
+# Native installer, not the npm shim: the SDK spawns the binary without a shell. The config
+# dir is fixed before the first run so the config the installer writes is the one the runner
+# finds at runtime; with it elsewhere, Claude sees only its own backup and refuses to answer.
+ENV CLAUDE_CONFIG_DIR="/root/.claude"
 RUN curl -fsSL https://claude.ai/install.sh | bash
 ENV PATH="/root/.local/bin:${PATH}"
 ENV CLAUDE_BINARY="/root/.local/bin/claude"
+# First invocation creates .claude.json; every later one then answers with JSON straight away.
+RUN claude auth status --json < /dev/null > /dev/null 2>&1 || true
+RUN test -f /root/.claude/.claude.json
 
 # node-pty (the terminal) ships prebuilt bindings for win32 and darwin only, so on this
 # image its install script falls through to `node-gyp rebuild`; python3/make/g++ above are for it.
