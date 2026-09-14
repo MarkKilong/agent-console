@@ -363,16 +363,34 @@ project dialog offers just the Git source, and `POST /api/environments` takes `{
 branch?}`. Each open creates a sandbox (public preview port, the runner token is the guard),
 which Daytona stops after 15 idle minutes and deletes a day later. Variables:
 
-| Variable                   | Meaning                                             |
-| -------------------------- | --------------------------------------------------- |
-| `NEXT_PUBLIC_ENV_PROVIDER` | `daytona`; anything else is the local provider.     |
-| `DAYTONA_API_KEY`          | Needs write and delete on sandboxes, nothing more.  |
-| `DAYTONA_SNAPSHOT`         | The snapshot name above.                            |
-| `RUNNER_AGENT`             | `fake` runs the deployment without any credentials. |
+| Variable                   | Meaning                                                                            |
+| -------------------------- | ---------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_ENV_PROVIDER` | `daytona`; anything else is the local provider.                                    |
+| `DAYTONA_API_KEY`          | Needs write and delete on sandboxes, nothing more.                                 |
+| `DAYTONA_SNAPSHOT`         | The snapshot name above.                                                           |
+| `SESSION_SECRET`           | _(required)_ 32+ random bytes, base64 or hex, encrypting the session cookie below. |
+| `RUNNER_AGENT`             | `fake` runs the deployment without any credentials.                                |
 
 On Vercel: Root Directory `apps/web`, `ENABLE_EXPERIMENTAL_COREPACK=1` so the pinned pnpm
 runs. The API hands out runner tokens and has no auth of its own, so keep Deployment
 Protection on unless the deployment is meant to be open.
+
+### Credentials live in the session, not in the sandbox
+
+Sandboxes are fresh compute and nothing persists in one, so a deployment holds no provider
+keys of its own: each visitor connects their own Claude, Codex and GitHub through the same
+Settings cards, and those sign-ins live in an encrypted, httpOnly cookie in their browser
+(AES-256-GCM under `SESSION_SECRET`, gzipped, split across `ac_session.N` when it outgrows
+one cookie). **Connect** creates a short-lived _auth sandbox_ with no repository, drives the
+usual sign-in through its runner, then `POST /api/credentials/capture` reads the credential
+files straight out of that sandbox with the Daytona file API, stores them, and deletes it —
+the secret never passes through the browser. Every sandbox opened afterwards gets those
+files written into it before its runner starts, at a fixed layout (`CLAUDE_CONFIG_DIR=/root/.claude`,
+`AGENT_CONSOLE_DATA_DIR=/root/.agent-console`, `HOME=/root`), and closing a project reads them
+back first, since Claude rotates its own refresh token. `GET /api/credentials` says who is
+connected, `DELETE /api/credentials/:provider` disconnects one and `DELETE /api/credentials`
+signs out of everything. All four are 404 in local mode, where the machine's own logins do
+the same job.
 
 ## Docker
 

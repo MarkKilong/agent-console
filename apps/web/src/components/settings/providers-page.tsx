@@ -5,6 +5,7 @@ import { ExternalLink, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { mergeModels, type ModelRow } from '@/lib/models';
+import { closeAuthEnvironment, loadProviderStatus } from '@/store/provider-status';
 import { isClaudeConnected, useAuthStore } from '@/store/use-auth-store';
 import { useCodexAuthStore } from '@/store/use-codex-auth-store';
 import { useModelSettings } from '@/store/use-model-settings';
@@ -34,7 +35,7 @@ export function ProvidersPage() {
 
   // A hard reload on this route has no shell to have opened the environment.
   useEffect(() => {
-    void useAuthStore.getState().ensure();
+    void loadProviderStatus();
     void useModelSettings.persist.rehydrate();
     return () => useCodexAuthStore.getState().stop();
   }, []);
@@ -404,7 +405,13 @@ function SigningIn({ authUrl, busy, run }: { authUrl: string; busy: boolean; run
         variant="ghost"
         size="sm"
         disabled={busy}
-        onClick={() => run(() => useAuthStore.getState().cancelLogin())}
+        onClick={() =>
+          run(async () => {
+            await useAuthStore.getState().cancelLogin();
+            // Nothing is signing in any more, so the sandbox holding it can go.
+            await closeAuthEnvironment();
+          })
+        }
       >
         Cancel
       </Button>

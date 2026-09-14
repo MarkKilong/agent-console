@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { closeProject, openProject } from '@/lib/open-project';
 import { RunnerClient } from '@/lib/runner-client';
-import { useAuthStore } from '@/store/use-auth-store';
+import { loadProviderStatus } from '@/store/provider-status';
 import { useComposerSettings } from '@/store/use-composer-settings';
 import { useConsoleStore } from '@/store/use-console-store';
 import { useLayoutStore } from '@/store/use-layout-store';
@@ -38,7 +38,7 @@ export function AppShell() {
     // Strict mode mounts twice; only the surviving run may open the project.
     let cancelled = false;
     // Claude's login is machine-level, so the composer can know about it with no project open.
-    void useAuthStore.getState().ensure();
+    void loadProviderStatus();
     void (async () => {
       await Promise.all([
         useProjectsStore.persist.rehydrate(),

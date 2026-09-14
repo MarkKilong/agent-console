@@ -10,3 +10,9 @@ export const PROVIDER_KIND: ProviderKind =
 
 /** A sandbox cannot reach folders on this machine, so only URL sources remain there. */
 export const canOpenLocalFolders = PROVIDER_KIND === 'local';
+
+/**
+ * Sandboxes are fresh every time, so the provider sign-ins live in this browser's session
+ * and are written into each one at create. Locally the machine's own logins do that job.
+ */
+export const sessionCredentials = PROVIDER_KIND === 'daytona';

@@ -4,6 +4,7 @@ import type { CodexAuthStatusData } from '@agent-console/contracts';
 import { ExternalLink, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/cn';
+import { closeAuthEnvironment } from '@/store/provider-status';
 import { useAuthStore } from '@/store/use-auth-store';
 import { useCodexAuthStore } from '@/store/use-codex-auth-store';
 import { IconButton, Spinner } from '../ui';
@@ -177,7 +178,13 @@ function SigningIn({
         variant="ghost"
         size="sm"
         disabled={busy}
-        onClick={() => run(() => useCodexAuthStore.getState().cancel())}
+        onClick={() =>
+          run(async () => {
+            await useCodexAuthStore.getState().cancel();
+            // Nothing is signing in any more, so the sandbox holding it can go.
+            await closeAuthEnvironment();
+          })
+        }
       >
         Cancel
       </Button>

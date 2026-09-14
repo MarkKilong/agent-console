@@ -4,6 +4,7 @@ import type { GithubStatusData } from '@agent-console/contracts';
 import { ExternalLink, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
+import { closeAuthEnvironment, loadProviderStatus } from '@/store/provider-status';
 import { useAuthStore } from '@/store/use-auth-store';
 import { useGithubStore } from '@/store/use-github-store';
 import { GithubMark } from '../github-mark';
@@ -24,7 +25,7 @@ export function GithubSection() {
 
   // A hard reload on this route has no shell to have opened the environment.
   useEffect(() => {
-    void useAuthStore.getState().ensure();
+    void loadProviderStatus();
     return () => useGithubStore.getState().stop();
   }, []);
 
@@ -142,7 +143,13 @@ function SigningIn({
         variant="ghost"
         size="sm"
         disabled={busy}
-        onClick={() => run(() => useGithubStore.getState().cancel())}
+        onClick={() =>
+          run(async () => {
+            await useGithubStore.getState().cancel();
+            // Nothing is signing in any more, so the sandbox holding it can go.
+            await closeAuthEnvironment();
+          })
+        }
       >
         Cancel
       </Button>
