@@ -3,16 +3,29 @@ import { z } from 'zod';
 export const EnvStatusSchema = z.enum(['creating', 'running', 'stopped', 'gone']);
 export type EnvStatus = z.infer<typeof EnvStatusSchema>;
 
-/** What an environment should contain. Exactly one of repoPath / repoUrl. */
+/** A file written into the environment before the runner starts, e.g. a credential. */
+export const EnvFileSchema = z.object({
+  path: z.string().min(1),
+  content: z.string(),
+  /** Octal permissions, e.g. `0o600`; the provider's default when absent. */
+  mode: z.number().int().positive().optional(),
+});
+export type EnvFile = z.infer<typeof EnvFileSchema>;
+
+/**
+ * What an environment should contain. Never both repoPath and repoUrl; neither means an
+ * empty workspace, which only providers that can make one accept.
+ */
 export const EnvSpecSchema = z
   .object({
     repoPath: z.string().min(1).optional(),
     repoUrl: z.url().optional(),
     branch: z.string().min(1).optional(),
     env: z.record(z.string(), z.string()).optional(),
+    files: z.array(EnvFileSchema).optional(),
   })
-  .refine((s) => Boolean(s.repoPath) !== Boolean(s.repoUrl), {
-    message: 'Provide exactly one of repoPath or repoUrl',
+  .refine((s) => !(s.repoPath && s.repoUrl), {
+    message: 'Provide at most one of repoPath or repoUrl',
   });
 export type EnvSpec = z.infer<typeof EnvSpecSchema>;
 

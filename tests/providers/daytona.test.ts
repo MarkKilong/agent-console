@@ -13,12 +13,35 @@ const PREVIEW = 'https://4310-sbx.daytonaproxy.example';
 function fakeSandbox(
   id: string,
   labels: Record<string, string>,
-): DaytonaSandbox & { calls: string[] } {
+  createdAt = new Date().toISOString(),
+): DaytonaSandbox & { calls: string[]; files: Map<string, string>; modes: Map<string, string> } {
   const calls: string[] = [];
+  const files = new Map<string, string>();
+  const modes = new Map<string, string>();
   return {
+    files,
+    modes,
+    fs: {
+      createFolder: async (path, mode) => {
+        calls.push(`mkdir ${path} ${mode}`);
+      },
+      uploadFiles: async (uploads) => {
+        calls.push(`upload ${uploads.map((file) => file.destination).join(',')}`);
+        for (const file of uploads) files.set(file.destination, file.source.toString('utf8'));
+      },
+      downloadFile: async (path) => {
+        const content = files.get(path);
+        if (content === undefined) throw new Error(`file not found: ${path}`);
+        return Buffer.from(content, 'utf8');
+      },
+      setFilePermissions: async (path, permissions) => {
+        if (permissions.mode) modes.set(path, permissions.mode);
+      },
+    },
     id,
     state: 'started',
     labels,
+    createdAt,
     calls,
     start: async () => {
       calls.push('start');
@@ -62,8 +85,20 @@ function fakeClient() {
         throw Object.assign(new Error(`Sandbox ${id} not found`), { name: 'DaytonaNotFoundError' });
       return sandbox;
     },
+    list: async function* (query) {
+      for (const sandbox of sandboxes.values()) {
+        const wanted = Object.entries(query?.labels ?? {});
+        if (wanted.every(([key, value]) => sandbox.labels[key] === value)) yield sandbox;
+      }
+    },
   };
-  return { client, created, sandboxes };
+  /** Puts a sandbox of a given age in the list, which `create` cannot express. */
+  const add = (id: string, labels: Record<string, string>, ageMs: number) => {
+    const sandbox = fakeSandbox(id, labels, new Date(Date.now() - ageMs).toISOString());
+    sandboxes.set(id, sandbox);
+    return sandbox;
+  };
+  return { client, created, sandboxes, add };
 }
 
 describe('DaytonaProvider', () => {
@@ -124,6 +159,90 @@ describe('DaytonaProvider', () => {
     vi.useRealTimers();
 
     expect(sandboxes.get('sbx-1')!.calls.at(-1)).toBe('delete');
+  });
+
+  it('writes the spec files before the runner starts and reads them back', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{"ok":true}', { status: 200 })),
+    );
+    const { client, sandboxes } = fakeClient();
+    const provider = new DaytonaProvider({ snapshot: 'runner:1', client });
+
+    await provider.create({
+      repoUrl: 'https://github.com/o/r.git',
+      files: [{ path: '/root/.claude/.credentials.json', content: '{"token":"t"}', mode: 0o600 }],
+    });
+
+    const sandbox = sandboxes.get('sbx-1')!;
+    // Uploaded after the clone and before the runner: the CLI reads it as it starts.
+    expect(sandbox.calls).toEqual([
+      `clone https://github.com/o/r.git ${DAYTONA_WORKSPACE}`,
+      'upload /root/.claude/.credentials.json',
+      'session runner',
+      'exec runner cd /app/packages/runner && node dist/main.js async=true',
+    ]);
+    expect(sandbox.modes.get('/root/.claude/.credentials.json')).toBe('600');
+
+    await expect(
+      provider.readFiles('sbx-1', ['/root/.claude/.credentials.json', '/root/.codex/auth.json']),
+    ).resolves.toEqual({ '/root/.claude/.credentials.json': '{"token":"t"}' });
+  });
+
+  it('makes an empty workspace when there is no repository, and labels it an auth sandbox', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{"ok":true}', { status: 200 })),
+    );
+    const { client, created, sandboxes } = fakeClient();
+    const provider = new DaytonaProvider({ snapshot: 'runner:1', client });
+
+    await provider.create({ env: { RUNNER_AGENT: 'fake' } });
+
+    const params = created[0]!;
+    expect(params.labels['agent-console/kind']).toBe('auth');
+    expect(params.autoStopInterval).toBe(5);
+    expect(params.autoDeleteInterval).toBe(0);
+    expect(params.envVars).toMatchObject({
+      HOME: '/root',
+      CLAUDE_CONFIG_DIR: '/root/.claude',
+      AGENT_CONSOLE_DATA_DIR: '/root/.agent-console',
+      RUNNER_CWD: DAYTONA_WORKSPACE,
+    });
+    expect(sandboxes.get('sbx-1')!.calls[0]).toBe(`mkdir ${DAYTONA_WORKSPACE} 755`);
+  });
+
+  it('sweeps only auth sandboxes, and only the ones past the age given', async () => {
+    const { client, add } = fakeClient();
+    const provider = new DaytonaProvider({ snapshot: 'runner:1', client });
+
+    const stale = add('auth-old', { 'agent-console/kind': 'auth' }, 45 * 60_000);
+    const fresh = add('auth-new', { 'agent-console/kind': 'auth' }, 60_000);
+    const project = add(
+      'project',
+      { 'agent-console/repo': 'https://github.com/o/r.git' },
+      5 * 3_600_000,
+    );
+
+    await expect(provider.sweepStaleAuth(30 * 60_000)).resolves.toEqual(['auth-old']);
+    expect(stale.calls).toEqual(['delete']);
+    expect(fresh.calls).toEqual([]);
+    expect(project.calls).toEqual([]);
+  });
+
+  it('keeps sweeping when one delete fails, and spares a sandbox with no age', async () => {
+    const { client, add } = fakeClient();
+    const provider = new DaytonaProvider({ snapshot: 'runner:1', client });
+
+    const stubborn = add('auth-stuck', { 'agent-console/kind': 'auth' }, 45 * 60_000);
+    stubborn.delete = () => Promise.reject(new Error('sandbox is busy'));
+    const ageless = add('auth-unknown', { 'agent-console/kind': 'auth' }, 45 * 60_000);
+    Object.assign(ageless, { createdAt: undefined });
+    const stale = add('auth-old', { 'agent-console/kind': 'auth' }, 45 * 60_000);
+
+    await expect(provider.sweepStaleAuth(30 * 60_000)).resolves.toEqual(['auth-old']);
+    expect(stale.calls).toEqual(['delete']);
+    expect(ageless.calls).toEqual([]);
   });
 
   it('refuses a local folder', async () => {
