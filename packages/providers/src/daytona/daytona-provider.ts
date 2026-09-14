@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   EnvSpecSchema,
   type EnvEndpoint,
+  type EnvFile,
   type EnvHandle,
   type EnvSpec,
   type EnvStatus,
@@ -11,25 +12,46 @@ import type { EnvironmentProvider } from '../environment-provider.js';
 /** Where the repository is cloned inside the sandbox; the runner's cwd. */
 export const DAYTONA_WORKSPACE = '/workspace/repo';
 
+/**
+ * The credential layout every sandbox gets, fixed so a file captured from one sandbox
+ * can be written back into the next at the same path. Set as env vars at create, after
+ * the caller's own, so nothing inherited from the control plane can move them.
+ */
+export const DAYTONA_HOME = '/root';
+export const DAYTONA_CLAUDE_CONFIG_DIR = `${DAYTONA_HOME}/.claude`;
+export const DAYTONA_DATA_DIR = `${DAYTONA_HOME}/.agent-console`;
+
 const RUNNER_PORT = 4310;
 const RUNNER_DIR = '/app/packages/runner';
 const TOKEN_LABEL = 'agent-console/token';
+const KIND_LABEL = 'agent-console/kind';
 const CREATE_TIMEOUT_S = 180;
 const HEALTH_TIMEOUT_MS = 60_000;
 /** Idle minutes before Daytona stops the sandbox, and stopped minutes before it deletes it. */
 const AUTO_STOP_MIN = 15;
 const AUTO_DELETE_MIN = 24 * 60;
+/** A sign-in lasts seconds, so an abandoned auth sandbox stops soon and is deleted at once. */
+const AUTH_AUTO_STOP_MIN = 5;
+const AUTH_AUTO_DELETE_MIN = 0;
 
 /** The slice of `@daytonaio/sdk` the provider uses, so tests can hand it a fake. */
 export interface DaytonaSandbox {
   readonly id: string;
   readonly state?: string;
   readonly labels: Record<string, string>;
+  /** ISO 8601; the sweep needs it to tell an abandoned auth sandbox from a fresh one. */
+  readonly createdAt?: string;
   start(timeout?: number): Promise<void>;
   stop(timeout?: number): Promise<void>;
   delete(timeout?: number): Promise<void>;
   getPreviewLink(port: number): Promise<{ url: string; token: string }>;
   readonly git: { clone(url: string, path: string, branch?: string): Promise<void> };
+  readonly fs: {
+    createFolder(path: string, mode: string): Promise<void>;
+    uploadFiles(files: Array<{ source: Buffer; destination: string }>): Promise<void>;
+    downloadFile(remotePath: string): Promise<Buffer>;
+    setFilePermissions(path: string, permissions: { mode?: string }): Promise<void>;
+  };
   readonly process: {
     createSession(sessionId: string): Promise<void>;
     executeSessionCommand(
@@ -52,6 +74,7 @@ export interface DaytonaClient {
     options: { timeout: number },
   ): Promise<DaytonaSandbox>;
   get(sandboxId: string): Promise<DaytonaSandbox>;
+  list(query?: { labels?: Record<string, string> }): AsyncIterable<DaytonaSandbox>;
 }
 
 export type DaytonaProviderOptions = {
@@ -75,11 +98,13 @@ export class DaytonaProvider implements EnvironmentProvider {
 
   async create(spec: EnvSpec): Promise<EnvHandle> {
     const parsed = EnvSpecSchema.parse(spec);
-    if (!parsed.repoUrl) {
+    if (parsed.repoPath) {
       throw new Error(
         'The Daytona provider clones repoUrl; a folder on this machine cannot be reached from a sandbox',
       );
     }
+    // No repository is the auth sandbox: it only drives a sign-in, so it lives minutes.
+    const repoUrl = parsed.repoUrl;
 
     const token = randomUUID();
     const sandbox = await (
@@ -92,19 +117,27 @@ export class DaytonaProvider implements EnvironmentProvider {
         public: true,
         envVars: {
           ...parsed.env,
+          HOME: DAYTONA_HOME,
+          CLAUDE_CONFIG_DIR: DAYTONA_CLAUDE_CONFIG_DIR,
+          AGENT_CONSOLE_DATA_DIR: DAYTONA_DATA_DIR,
           RUNNER_TOKEN: token,
           RUNNER_PORT: String(RUNNER_PORT),
           RUNNER_CWD: DAYTONA_WORKSPACE,
         },
-        labels: { [TOKEN_LABEL]: token, 'agent-console/repo': parsed.repoUrl },
-        autoStopInterval: AUTO_STOP_MIN,
-        autoDeleteInterval: AUTO_DELETE_MIN,
+        labels: repoUrl
+          ? { [TOKEN_LABEL]: token, 'agent-console/repo': repoUrl }
+          : { [TOKEN_LABEL]: token, [KIND_LABEL]: 'auth' },
+        autoStopInterval: repoUrl ? AUTO_STOP_MIN : AUTH_AUTO_STOP_MIN,
+        autoDeleteInterval: repoUrl ? AUTO_DELETE_MIN : AUTH_AUTO_DELETE_MIN,
       },
       { timeout: CREATE_TIMEOUT_S },
     );
 
     try {
-      await sandbox.git.clone(parsed.repoUrl, DAYTONA_WORKSPACE, parsed.branch);
+      if (repoUrl) await sandbox.git.clone(repoUrl, DAYTONA_WORKSPACE, parsed.branch);
+      else await sandbox.fs.createFolder(DAYTONA_WORKSPACE, '755');
+      // Before the runner: the CLIs read their credentials as they start.
+      await writeFiles(sandbox, parsed.files);
       await launchRunner(sandbox);
     } catch (error) {
       // A half-made sandbox would sit idle and bill until auto-delete.
@@ -112,6 +145,46 @@ export class DaytonaProvider implements EnvironmentProvider {
       throw error;
     }
     return { id: sandbox.id, kind: 'daytona', status: 'running' };
+  }
+
+  /**
+   * Reads credential files back out of a sandbox. Not on `EnvironmentProvider`: only a
+   * provider that injects files has any to read. Paths that do not exist are left out,
+   * so a sign-in that wrote one file does not clear the others.
+   */
+  async readFiles(id: string, paths: readonly string[]): Promise<Record<string, string>> {
+    const sandbox = await this.sandbox(id);
+    const found = await Promise.all(
+      paths.map(async (path) => {
+        try {
+          return [path, (await sandbox.fs.downloadFile(path)).toString('utf8')] as const;
+        } catch {
+          return undefined;
+        }
+      }),
+    );
+    return Object.fromEntries(found.filter((entry) => entry !== undefined));
+  }
+
+  /**
+   * Deletes auth sandboxes older than `maxAgeMs`: the backstop for the ones a browser never
+   * closed, which otherwise hold the organisation's whole memory quota until someone notices.
+   * Project sandboxes carry no `kind` label, so the query cannot reach them.
+   */
+  async sweepStaleAuth(maxAgeMs: number): Promise<string[]> {
+    const cutoff = Date.now() - maxAgeMs;
+    const swept: string[] = [];
+    for await (const sandbox of (await this.daytona()).list({ labels: { [KIND_LABEL]: 'auth' } })) {
+      const created = Date.parse(sandbox.createdAt ?? '');
+      // An unreadable age counts as fresh: deleting a sign-in in progress is the worse mistake.
+      if (!Number.isFinite(created) || created > cutoff) continue;
+      const deleted = await sandbox.delete().then(
+        () => true,
+        () => false,
+      );
+      if (deleted) swept.push(sandbox.id);
+    }
+    return swept;
   }
 
   async start(id: string): Promise<void> {
@@ -165,6 +238,19 @@ export class DaytonaProvider implements EnvironmentProvider {
       ? Promise.resolve(this.options.client)
       : import('@daytonaio/sdk').then((sdk) => new sdk.Daytona() as unknown as DaytonaClient);
     return this.client;
+  }
+}
+
+/** Writes the spec's files; the upload API creates missing parent directories itself. */
+async function writeFiles(sandbox: DaytonaSandbox, files: EnvFile[] | undefined): Promise<void> {
+  if (!files?.length) return;
+  await sandbox.fs.uploadFiles(
+    files.map((file) => ({ source: Buffer.from(file.content, 'utf8'), destination: file.path })),
+  );
+  // Uploads land at 0644; a credential that asked for narrower is tightened afterwards.
+  for (const file of files) {
+    if (file.mode === undefined) continue;
+    await sandbox.fs.setFilePermissions(file.path, { mode: file.mode.toString(8) });
   }
 }
 

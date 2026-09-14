@@ -2,7 +2,13 @@ import { DaytonaProvider } from './daytona/daytona-provider.js';
 import type { EnvironmentProvider } from './environment-provider.js';
 
 export type { EnvironmentProvider } from './environment-provider.js';
-export { DaytonaProvider, DAYTONA_WORKSPACE } from './daytona/daytona-provider.js';
+export {
+  DaytonaProvider,
+  DAYTONA_CLAUDE_CONFIG_DIR,
+  DAYTONA_DATA_DIR,
+  DAYTONA_HOME,
+  DAYTONA_WORKSPACE,
+} from './daytona/daytona-provider.js';
 
 export type ProviderKind = 'local' | 'daytona';
 
