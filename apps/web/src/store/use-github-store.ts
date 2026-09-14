@@ -1,7 +1,14 @@
 import type { GithubStatusData } from '@agent-console/contracts';
 import { create } from 'zustand';
+import {
+  captureCredentials,
+  disconnectCredentials,
+  githubStatusOf,
+  type CredentialSummary,
+} from '@/lib/credentials-api';
+import { sessionCredentials } from '@/lib/deployment';
 import type { RunnerClient } from '@/lib/runner-client';
-import { useAuthStore } from '@/store/use-auth-store';
+import { ensureAuthRunner, useAuthStore } from '@/store/use-auth-store';
 
 /** How often a login waiting for approval asks the runner whether it landed. */
 const POLL_MS = 3000;
@@ -9,6 +16,7 @@ const POLL_MS = 3000;
 type GithubStore = {
   status?: GithubStatusData;
   error?: string;
+  seed(summary: CredentialSummary): void;
   refresh(): Promise<void>;
   startLogin(): Promise<void>;
   cancel(): Promise<void>;
@@ -28,6 +36,11 @@ function schedulePoll(status: GithubStatusData): void {
 }
 
 export const useGithubStore = create<GithubStore>((set, get) => ({
+  seed: (summary) => {
+    clearTimeout(pollTimer);
+    set({ status: githubStatusOf(summary.github), error: undefined });
+  },
+
   // Status is advisory: a runner that cannot answer leaves the last one in place.
   refresh: async () => {
     const client = useAuthStore.getState().client;
@@ -36,6 +49,8 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
       const data = await client.request({ type: 'github_status' });
       if (!('connected' in data)) return;
       set({ status: data, error: data.error });
+      // A landed device login is the moment to lift it out of the sandbox.
+      if (sessionCredentials && data.connected) return capture(data);
       schedulePoll(data);
     } catch (cause) {
       set({ error: messageOf(cause) });
@@ -44,6 +59,7 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
 
   // The code shows before the first status arrives, so nothing waits three seconds.
   startLogin: async () => {
+    await ensureAuthRunner();
     const data = await requireClient().request({ type: 'github_login_start' });
     // `verificationUri`, not `userCode`: the Codex login start answers with one of those too.
     if (!('verificationUri' in data)) throw new Error('The runner did not start a GitHub login');
@@ -60,7 +76,9 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
     await get().refresh();
   },
 
+  // Sandbox mode has no machine token to delete: dropping the session's copy is the sign-out.
   logout: async () => {
+    if (sessionCredentials) return get().seed(await disconnectCredentials('github'));
     await requireClient().request({ type: 'github_logout' });
     await get().refresh();
   },
@@ -70,6 +88,24 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
     pollTimer = undefined;
   },
 }));
+
+/** Sandbox mode: the sandbox is about to go, so the sign-in it holds moves into the session. */
+async function capture(status: GithubStatusData): Promise<void> {
+  const environment = useAuthStore.getState().environment;
+  if (!environment) return;
+  useAuthStore.setState({ capturing: true });
+  try {
+    const summary = await captureCredentials(environment.id, 'github', {
+      login: status.login,
+      scopes: status.scopes,
+    });
+    useAuthStore.getState().reset();
+    useAuthStore.getState().seed(summary);
+    useGithubStore.getState().seed(summary);
+  } finally {
+    useAuthStore.setState({ capturing: false });
+  }
+}
 
 function requireClient(): RunnerClient {
   const client = useAuthStore.getState().client;

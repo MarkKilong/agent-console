@@ -15,6 +15,35 @@ export function getProvider(): Promise<EnvironmentProvider> {
   return globalForProvider.agentConsoleProvider;
 }
 
+/** The capability the credential routes need: only a provider that injects files has any to read. */
+type FileReadingProvider = {
+  readFiles(id: string, paths: readonly string[]): Promise<Record<string, string>>;
+};
+
+export async function getFileReadingProvider(): Promise<FileReadingProvider> {
+  const provider = await getProvider();
+  if (!('readFiles' in provider)) {
+    throw new Error('This deployment cannot read credentials out of an environment');
+  }
+  return provider as EnvironmentProvider & FileReadingProvider;
+}
+
+/** How long an auth sandbox may live before the sweep treats it as abandoned. */
+const AUTH_MAX_AGE_MS = 30 * 60 * 1000;
+
+/**
+ * Deletes auth sandboxes no browser ever closed. Every exit path in the app deletes its own,
+ * so this only catches the ones that got away — and it must never fail a create.
+ */
+export async function sweepStaleAuthEnvironments(): Promise<void> {
+  const provider = await getProvider();
+  if (!('sweepStaleAuth' in provider)) return;
+  const sweeper = provider as EnvironmentProvider & {
+    sweepStaleAuth(maxAgeMs: number): Promise<string[]>;
+  };
+  await sweeper.sweepStaleAuth(AUTH_MAX_AGE_MS).catch(() => {});
+}
+
 /**
  * Runner settings this process is allowed to forward into the environment.
  * `agent`, when the request picked one, wins over the process-level default.

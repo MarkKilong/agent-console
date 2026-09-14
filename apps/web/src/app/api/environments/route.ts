@@ -1,15 +1,14 @@
 import { mkdirSync } from 'node:fs';
+import type { EnvSpec } from '@agent-console/contracts';
+import type { EnvironmentProvider } from '@agent-console/providers';
 import { DAYTONA_WORKSPACE } from '@agent-console/providers';
 import { dataRoot } from '@agent-console/runner/data-root';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { PROVIDER_KIND } from '@/lib/deployment';
-import { getProvider, runnerEnv } from '@/server/provider';
-
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-// A sandbox has to be created, cloned into and health-checked before this answers.
-export const maxDuration = 120;
+import { PROVIDER_KIND, sessionCredentials } from '@/lib/deployment';
+import { sessionFiles } from '@/server/credentials';
+import { getProvider, runnerEnv, sweepStaleAuthEnvironments } from '@/server/provider';
+import { readSession, writeSession } from '@/server/session';
 
 const BodySchema = z.object({
   repoPath: z.string().trim().min(1).optional(),
@@ -36,35 +35,79 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const { repoPath, repoUrl, branch, agent } = parsed.data;
-  // A sandbox can only clone: no folder on this machine, and no auth environment yet (plan 25).
-  if (PROVIDER_KIND === 'daytona' && !repoUrl) {
+  const sandbox = PROVIDER_KIND === 'daytona';
+  if (sandbox && repoPath) {
     return NextResponse.json(
       {
-        error: repoPath
-          ? 'This deployment opens repositories by URL; a folder on your machine cannot be reached from a sandbox'
-          : 'Provider sign-in is not available on this deployment yet',
+        error:
+          'This deployment opens repositories by URL; a folder on your machine cannot be reached from a sandbox',
       },
       { status: 400 },
     );
   }
 
   const provider = await getProvider();
+  const session = sessionCredentials ? await readSession() : undefined;
+  // No repository in sandbox mode is the auth environment: one per session, reused.
+  const authEnvironment = sandbox && !repoUrl;
+
   try {
-    const spec = repoUrl
-      ? { repoUrl, branch, env: runnerEnv(agent) }
-      : { repoPath: repoPath ?? authEnvironmentPath(), env: runnerEnv(agent) };
+    if (authEnvironment && session?.authEnvironmentId) {
+      const id = session.authEnvironmentId;
+      if (await stillServing(provider, id)) return await answer(provider, id);
+      await provider.destroy(id).catch(() => {});
+      session.authEnvironmentId = undefined;
+    }
+    if (sandbox) await sweepStaleAuthEnvironments();
+
+    // The session's sign-ins go in at create, so the runner and the CLIs find them on boot.
+    const files = session ? sessionFiles(session) : undefined;
+    const spec: EnvSpec = repoUrl
+      ? { repoUrl, branch, env: runnerEnv(agent), files }
+      : sandbox
+        ? { env: runnerEnv(agent), files }
+        : { repoPath: repoPath ?? authEnvironmentPath(), env: runnerEnv(agent) };
     const handle = await provider.create(spec);
-    const endpoint = await provider.endpoint(handle.id);
-    return NextResponse.json({
-      id: handle.id,
-      url: endpoint.url,
-      token: endpoint.token,
-      // Where the runner sees the repository, so the client can map tool paths to it.
-      repoPath: repoUrl ? DAYTONA_WORKSPACE : spec.repoPath,
-    });
+    if (authEnvironment && session) {
+      session.authEnvironmentId = handle.id;
+      await writeSession(session);
+    }
+    return await answer(provider, handle.id, spec.repoPath);
   } catch (error) {
     return NextResponse.json({ error: messageOf(error) }, { status: 400 });
   }
+}
+
+/**
+ * Whether the session's auth sandbox can be handed out again: still running, and its runner
+ * still answers. Not `start`, which would launch a second runner on top of the live one.
+ */
+async function stillServing(provider: EnvironmentProvider, id: string): Promise<boolean> {
+  try {
+    if ((await provider.status(id)) !== 'running') return false;
+    const { url } = await provider.endpoint(id);
+    const health = await fetch(`${url.replace(/^ws/, 'http')}/healthz`, {
+      signal: AbortSignal.timeout(5_000),
+    });
+    return health.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function answer(
+  provider: EnvironmentProvider,
+  id: string,
+  repoPath?: string,
+): Promise<NextResponse> {
+  const endpoint = await provider.endpoint(id);
+  return NextResponse.json({
+    id,
+    url: endpoint.url,
+    token: endpoint.token,
+    // Where the runner sees the repository, so the client can map tool paths to it.
+    repoPath: PROVIDER_KIND === 'daytona' ? DAYTONA_WORKSPACE : repoPath,
+  });
 }
 
 /**

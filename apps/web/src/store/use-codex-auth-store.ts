@@ -1,7 +1,14 @@
 import type { CodexAuthStatusData } from '@agent-console/contracts';
 import { create } from 'zustand';
+import {
+  captureCredentials,
+  codexStatusOf,
+  disconnectCredentials,
+  type CredentialSummary,
+} from '@/lib/credentials-api';
+import { sessionCredentials } from '@/lib/deployment';
 import type { RunnerClient } from '@/lib/runner-client';
-import { useAuthStore } from '@/store/use-auth-store';
+import { ensureAuthRunner, useAuthStore } from '@/store/use-auth-store';
 
 /** How often a login waiting for approval asks the runner whether it landed. */
 const POLL_MS = 3000;
@@ -9,6 +16,7 @@ const POLL_MS = 3000;
 type CodexAuthStore = {
   status?: CodexAuthStatusData;
   error?: string;
+  seed(summary: CredentialSummary): void;
   refresh(): Promise<void>;
   startLogin(): Promise<void>;
   cancel(): Promise<void>;
@@ -29,6 +37,11 @@ function schedulePoll(status: CodexAuthStatusData): void {
 }
 
 export const useCodexAuthStore = create<CodexAuthStore>((set, get) => ({
+  seed: (summary) => {
+    clearTimeout(pollTimer);
+    set({ status: codexStatusOf(summary.codex), error: undefined });
+  },
+
   // Status is advisory: a runner that cannot answer leaves the last one in place.
   refresh: async () => {
     const client = useAuthStore.getState().client;
@@ -37,6 +50,8 @@ export const useCodexAuthStore = create<CodexAuthStore>((set, get) => ({
       const data = await client.request({ type: 'codex_auth_status' });
       if (!('installed' in data)) return;
       set({ status: data, error: data.error });
+      // A landed device login is the moment to lift it out of the sandbox.
+      if (sessionCredentials && data.loggedIn) return capture(data);
       schedulePoll(data);
     } catch (cause) {
       set({ error: messageOf(cause) });
@@ -45,6 +60,7 @@ export const useCodexAuthStore = create<CodexAuthStore>((set, get) => ({
 
   // The code shows before the first status arrives, so nothing waits three seconds.
   startLogin: async () => {
+    await ensureAuthRunner();
     const data = await requireClient().request({ type: 'codex_login_start' });
     if (!('verificationUrl' in data)) throw new Error('The runner did not start a Codex login');
     const status: CodexAuthStatusData = {
@@ -64,12 +80,15 @@ export const useCodexAuthStore = create<CodexAuthStore>((set, get) => ({
     await get().refresh();
   },
 
+  // Sandbox mode has no CLI to log out of: dropping the session's copy is the sign-out.
   logout: async () => {
+    if (sessionCredentials) return get().seed(await disconnectCredentials('codex'));
     await requireClient().request({ type: 'codex_logout' });
     await get().refresh();
   },
 
   setApiKey: async (key) => {
+    await ensureAuthRunner();
     await requireClient().request({ type: 'codex_set_api_key', key });
     await get().refresh();
   },
@@ -79,6 +98,23 @@ export const useCodexAuthStore = create<CodexAuthStore>((set, get) => ({
     pollTimer = undefined;
   },
 }));
+
+/** Sandbox mode: the sandbox is about to go, so the sign-in it holds moves into the session. */
+async function capture(status: CodexAuthStatusData): Promise<void> {
+  const environment = useAuthStore.getState().environment;
+  if (!environment) return;
+  useAuthStore.setState({ capturing: true });
+  try {
+    const summary = await captureCredentials(environment.id, 'codex', {
+      authMethod: status.authMethod,
+    });
+    useAuthStore.getState().reset();
+    useAuthStore.getState().seed(summary);
+    useCodexAuthStore.getState().seed(summary);
+  } finally {
+    useAuthStore.setState({ capturing: false });
+  }
+}
 
 function requireClient(): RunnerClient {
   const client = useAuthStore.getState().client;
