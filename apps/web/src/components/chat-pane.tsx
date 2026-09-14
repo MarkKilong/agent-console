@@ -28,6 +28,7 @@ export function ChatPane({ client, threadId, onShowFiles, onAddProject }: Props)
   const notePrompt = useConsoleStore((state) => state.notePrompt);
   const thread = useThread(threadId);
   const claudeConnected = useAuthStore(isClaudeConnected);
+  const notice = useConsoleStore((state) => state.notice);
   // Unknown until the auth environment answers; do not tell the user to connect before then.
   const authKnown = useAuthStore((state) => state.auth !== undefined);
   const [error, setError] = useState<string | null>(null);
@@ -84,13 +85,15 @@ export function ChatPane({ client, threadId, onShowFiles, onAddProject }: Props)
       turnActive={thread.turnActive}
       stopping={stopping}
       placeholder={
-        !authKnown
+        // What just happened to the environment outranks the standing advice.
+        notice ??
+        (!authKnown
           ? 'Checking Claude…'
           : !claudeConnected
             ? 'Connect Claude in Settings to start'
             : project
               ? 'Ask for changes, send follow-ups, or attach images'
-              : 'Choose a project above to start a thread'
+              : 'Choose a project above to start a thread')
       }
       onSend={send}
       onStop={() => {

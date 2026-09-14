@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, CircleAlert, FolderPlus, Link as LinkIcon } from 'lucide-react';
+import { ArrowLeft, CircleAlert, FilePlus2, FolderPlus, Link as LinkIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
@@ -15,7 +15,7 @@ import {
   repoNameFromUrl,
   SourceError,
 } from '@/lib/project-source';
-import { useProjectsStore } from '@/store/use-projects-store';
+import { useProjectsStore, type Project } from '@/store/use-projects-store';
 import { FolderBrowser } from './folder-browser';
 import { IconButton, Spinner } from './ui';
 import { Button } from './ui/button';
@@ -27,16 +27,18 @@ type Props = {
   onClose(): void;
 };
 
-type Step = 'sources' | 'local' | 'git';
+type Step = 'sources' | 'blank' | 'local' | 'git';
 
 const SOURCES = [
+  { id: 'blank', title: 'New project', subtitle: 'Start from an empty folder', icon: FilePlus2 },
   { id: 'local', title: 'Local folder', subtitle: 'Browse a folder on disk', icon: FolderPlus },
   { id: 'git', title: 'Git URL', subtitle: 'Clone from a remote URL', icon: LinkIcon },
 ] as const;
 
-const AVAILABLE_SOURCES = canOpenLocalFolders
-  ? SOURCES
-  : SOURCES.filter((source) => source.id === 'git');
+// Starting empty is what "Local folder" already is on a machine; in a sandbox it needs a source.
+const AVAILABLE_SOURCES = SOURCES.filter((source) =>
+  canOpenLocalFolders ? source.id !== 'blank' : source.id !== 'local',
+);
 
 /** Pick a source, then fill it in: a folder already here, or one cloned from a URL. */
 export function AddProjectDialog({ open, onClose }: Props) {
@@ -58,6 +60,7 @@ export function AddProjectDialog({ open, onClose }: Props) {
       >
         <DialogTitle className="sr-only">Add project</DialogTitle>
         {step === 'sources' ? <SourceList onPick={setStep} onClose={close} /> : null}
+        {step === 'blank' ? <BlankForm onBack={() => setStep('sources')} onDone={close} /> : null}
         {step === 'local' ? (
           <LocalForm start={prefill} onBack={() => setStep('sources')} onDone={close} />
         ) : null}
@@ -159,6 +162,63 @@ function SourceList({ onPick, onClose }: { onPick(step: Step): void; onClose(): 
   );
 }
 
+function BlankForm({ onBack, onDone }: { onBack(): void; onDone(): void }) {
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await addAndOpen({ name: name.trim() });
+      onDone();
+    } catch (cause) {
+      setError(messageOf(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div>
+      <StepHeader title="New project" subtitle="Start from an empty folder" onBack={onBack} />
+
+      <div className="space-y-3 p-3">
+        <Field label="Name">
+          <Input
+            autoFocus
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') void submit();
+            }}
+            placeholder="Project name"
+          />
+        </Field>
+        <p className="text-xs text-muted-foreground">
+          Lives in a sandbox. Push to GitHub to keep it beyond a day.
+        </p>
+
+        {error ? (
+          <ErrorLine>
+            <p>{error}</p>
+          </ErrorLine>
+        ) : null}
+      </div>
+
+      <Footer>
+        <Hint keys={['Esc']} label="Close" />
+        <Button className="ml-auto" disabled={busy || !name.trim()} onClick={() => void submit()}>
+          {busy ? <Spinner /> : null}
+          {busy ? 'Creating…' : 'Create project'}
+        </Button>
+      </Footer>
+    </div>
+  );
+}
+
 function LocalForm({ start, onBack, onDone }: { start: string; onBack(): void; onDone(): void }) {
   const [path, setPath] = useState(start);
   const [name, setName] = useState('');
@@ -172,7 +232,7 @@ function LocalForm({ start, onBack, onDone }: { start: string; onBack(): void; o
     setError(null);
     try {
       const folder = await inspectFolder(path);
-      await addAndOpen(folder.path, name);
+      await addAndOpen({ name: name.trim() || folder.name, repoPath: folder.path });
       onDone();
     } catch (cause) {
       setError(messageOf(cause));
@@ -289,11 +349,11 @@ function GitForm({
     try {
       if (!canOpenLocalFolders) {
         // The provider clones on open, so the project is just the URL.
-        await addAndOpen(url.trim(), name.trim() || repoNameFromUrl(url), url.trim());
+        await addAndOpen({ name: name.trim() || repoNameFromUrl(url), repoUrl: url.trim() });
       } else {
         const cloned = await cloneRepository({ url, parent, name: name.trim() || undefined });
         setCloneParent(parent);
-        await addAndOpen(cloned.path, name);
+        await addAndOpen({ name: name.trim() || cloned.name, repoPath: cloned.path });
       }
       onDone();
     } catch (cause) {
@@ -470,9 +530,9 @@ function Kbd({ children }: { children: ReactNode }) {
 }
 
 /** Adds the project and opens it, undoing the add when the folder will not open. */
-async function addAndOpen(repoPath: string, name: string, repoUrl?: string): Promise<void> {
+async function addAndOpen(input: Pick<Project, 'name' | 'repoPath' | 'repoUrl'>): Promise<void> {
   const { addProject, removeProject } = useProjectsStore.getState();
-  const project = addProject(repoPath, name, repoUrl);
+  const project = addProject(input);
   try {
     await openProject(project);
   } catch (cause) {

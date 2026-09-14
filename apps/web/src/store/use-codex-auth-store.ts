@@ -8,7 +8,7 @@ import {
 } from '@/lib/credentials-api';
 import { sessionCredentials } from '@/lib/deployment';
 import type { RunnerClient } from '@/lib/runner-client';
-import { ensureAuthRunner, useAuthStore } from '@/store/use-auth-store';
+import { ensureAuthRunner, pushToOpenProject, useAuthStore } from '@/store/use-auth-store';
 
 /** How often a login waiting for approval asks the runner whether it landed. */
 const POLL_MS = 3000;
@@ -111,6 +111,7 @@ async function capture(status: CodexAuthStatusData): Promise<void> {
     useAuthStore.getState().reset();
     useAuthStore.getState().seed(summary);
     useCodexAuthStore.getState().seed(summary);
+    await pushToOpenProject();
   } finally {
     useAuthStore.setState({ capturing: false });
   }

@@ -224,13 +224,17 @@ Projects live in `localStorage`, so the list — plus the composer's model/effor
 which side panels are open — survives a reload. Selecting a project posts to
 `POST /api/environments`, which returns `{id, url, token}`;
 the browser then opens a WebSocket to the runner and drives it directly — the Next.js server is
-not in the message path. Switching projects destroys the previous environment first.
+not in the message path. Switching projects hands the previous environment back first —
+destroyed locally, stopped on a sandbox deployment, where reopening wakes it again.
 
 | Route                                   | Does                                                                                                                                                                |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `POST /api/environments`                | `{repoPath, agent?}` → creates an environment and returns `{id, url, token}`. `agent` is `claude` or `codex` and overrides `RUNNER_AGENT` for that environment.     |
 | `GET /api/environments/:id`             | Environment status.                                                                                                                                                 |
+| `POST /api/environments/:id/resume`     | Wakes an environment that still holds a project's files and returns `{id, url, token}`; `404` once it is gone. Sandbox deployments only.                            |
+| `POST /api/environments/:id/stop`       | Stops the environment without losing it — what closing or switching projects calls.                                                                                 |
 | `DELETE /api/environments/:id`          | Destroys the environment and kills its runner.                                                                                                                      |
+| `POST /api/auth-environment`            | Creates or reuses the session's sign-in environment; `DELETE` cancels it.                                                                                           |
 | `GET /api/folders?path=`                | One level of the folder browser: `{path, parent, entries, roots}`. No `path` means the home folder.                                                                 |
 | `POST /api/projects/inspect`            | `{path}` → `{path, name, isGitRepo}` for a folder that exists.                                                                                                      |
 | `POST /api/projects/clone`              | `{url, parent?, name?}` → clones into `<parent>/<name>` under the clone root and returns `{path, name}`. `GET` answers `{parent}` with the clone root, creating it. |
@@ -358,10 +362,17 @@ starts the runner in a process session after cloning the repository to `/workspa
 
 ### Web app
 
-Set `NEXT_PUBLIC_ENV_PROVIDER=daytona` and the app opens repositories by URL only: the Add
-project dialog offers just the Git source, and `POST /api/environments` takes `{repoUrl,
-branch?}`. Each open creates a sandbox (public preview port, the runner token is the guard),
-which Daytona stops after 15 idle minutes and deletes a day later. Variables:
+Set `NEXT_PUBLIC_ENV_PROVIDER=daytona` and the Add project dialog offers **New project** and
+**Git URL** instead of a folder on this machine: `POST /api/environments` takes `{repoUrl,
+branch?}` or `{name}`, and a name alone gets an empty, `git init`-ed `/workspace/repo` to start
+typing in. Each open creates a sandbox (public preview port, the runner token is the guard),
+which Daytona stops after 15 idle minutes and deletes a day later. A project remembers its
+sandbox, so closing or switching only stops it (`POST /api/environments/:id/stop`) and reopening
+wakes it with the files intact (`POST /api/environments/:id/resume`, about two seconds); a
+stopped sandbox costs no memory quota. Once it is deleted a blank project comes back empty, so
+push to GitHub for anything worth keeping. The session's sign-ins are written into a sandbox at
+create, again on every resume, and — through `POST /api/environments/:id/credentials` — as soon as
+a sign-in lands while a project is open, so a project is never left without them. Variables:
 
 | Variable                   | Meaning                                                                            |
 | -------------------------- | ---------------------------------------------------------------------------------- |
@@ -381,13 +392,13 @@ Sandboxes are fresh compute and nothing persists in one, so a deployment holds n
 keys of its own: each visitor connects their own Claude, Codex and GitHub through the same
 Settings cards, and those sign-ins live in an encrypted, httpOnly cookie in their browser
 (AES-256-GCM under `SESSION_SECRET`, gzipped, split across `ac_session.N` when it outgrows
-one cookie). **Connect** creates a short-lived _auth sandbox_ with no repository, drives the
-usual sign-in through its runner, then `POST /api/credentials/capture` reads the credential
+one cookie). **Connect** asks `POST /api/auth-environment` for a short-lived _auth sandbox_ with
+no project, drives the usual sign-in through its runner, then `POST /api/credentials/capture` reads the credential
 files straight out of that sandbox with the Daytona file API, stores them, and deletes it —
 the secret never passes through the browser. Every sandbox opened afterwards gets those
 files written into it before its runner starts, at a fixed layout (`CLAUDE_CONFIG_DIR=/root/.claude`,
-`AGENT_CONSOLE_DATA_DIR=/root/.agent-console`, `HOME=/root`), and closing a project reads them
-back first, since Claude rotates its own refresh token. `GET /api/credentials` says who is
+`AGENT_CONSOLE_DATA_DIR=/root/.agent-console`, `HOME=/root`), and stopping a project's sandbox
+reads them back first, since Claude rotates its own refresh token. `GET /api/credentials` says who is
 connected, `DELETE /api/credentials/:provider` disconnects one and `DELETE /api/credentials`
 signs out of everything. All four are 404 in local mode, where the machine's own logins do
 the same job.

@@ -17,7 +17,7 @@ import {
 import Link from 'next/link';
 import { useState, type SyntheticEvent } from 'react';
 import { cn } from '@/lib/cn';
-import { closeProject, openProject } from '@/lib/open-project';
+import { openProject, removeProject } from '@/lib/open-project';
 import { relativeTime } from '@/lib/relative-time';
 import type { RunnerClient } from '@/lib/runner-client';
 import { threadStatus, type ThreadStatus } from '@/store/thread-state';
@@ -131,7 +131,6 @@ const stopEvent = (event: SyntheticEvent) => event.stopPropagation();
 /** The open project, with switching, removing and adding all living in its menu. */
 function ProjectSelector({ onAddProject }: { onAddProject(): void }) {
   const projects = useProjectsStore((state) => state.projects);
-  const removeProject = useProjectsStore((state) => state.removeProject);
   const active = useActiveProject();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -147,11 +146,6 @@ function ProjectSelector({ onAddProject }: { onAddProject(): void }) {
     } finally {
       setBusy(false);
     }
-  }
-
-  async function remove(project: Project) {
-    if (project.id === active?.id) await closeProject();
-    removeProject(project.id);
   }
 
   return (
@@ -190,7 +184,7 @@ function ProjectSelector({ onAddProject }: { onAddProject(): void }) {
                 onPointerUp={stopEvent}
                 onClick={(event) => {
                   event.stopPropagation();
-                  void remove(project);
+                  void removeProject(project);
                 }}
                 aria-label={`Remove ${project.name}`}
                 title="Remove from the list"

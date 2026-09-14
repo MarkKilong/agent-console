@@ -4,10 +4,12 @@ import {
   captureCredentials,
   claudeStatusOf,
   disconnectCredentials,
+  pushCredentials,
   type CredentialSummary,
 } from '@/lib/credentials-api';
 import { sessionCredentials } from '@/lib/deployment';
 import { RunnerClient } from '@/lib/runner-client';
+import { useConsoleStore } from '@/store/use-console-store';
 
 export type AuthEnvironment = { id: string; url: string; token: string };
 
@@ -182,9 +184,19 @@ async function capture(get: () => AuthStore): Promise<void> {
     });
     get().reset();
     get().seed(summary);
+    await pushToOpenProject();
   } finally {
     useAuthStore.setState({ capturing: false });
   }
+}
+
+/**
+ * A sign-in that lands while a project is open reaches its sandbox now rather than at the
+ * next resume, so the very next turn is signed in. Shared by all three cards' captures.
+ */
+export async function pushToOpenProject(): Promise<void> {
+  const open = useConsoleStore.getState().environment;
+  if (open) await pushCredentials(open.id);
 }
 
 /** Opens the auth environment — a runner at the shared data root — and connects to it. */
@@ -217,11 +229,7 @@ async function open(): Promise<void> {
 }
 
 async function createEnvironment(): Promise<AuthEnvironment> {
-  const response = await fetch('/api/environments', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({}),
-  });
+  const response = await fetch('/api/auth-environment', { method: 'POST' });
   const body = (await response.json()) as AuthEnvironment | { error: string };
   if (!response.ok || !('id' in body)) {
     throw new Error('error' in body ? body.error : 'Could not open the settings environment');

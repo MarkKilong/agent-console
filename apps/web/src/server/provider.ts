@@ -1,5 +1,8 @@
+import type { EnvFile } from '@agent-console/contracts';
 import type { EnvironmentProvider } from '@agent-console/providers';
 import { PROVIDER_KIND } from '@/lib/deployment';
+import { sessionFiles } from '@/server/credentials';
+import { readSession } from '@/server/session';
 
 // Route handler modules are re-evaluated on every edit in dev; keeping the
 // provider on globalThis stops each reload from orphaning its running runners.
@@ -15,17 +18,29 @@ export function getProvider(): Promise<EnvironmentProvider> {
   return globalForProvider.agentConsoleProvider;
 }
 
-/** The capability the credential routes need: only a provider that injects files has any to read. */
-type FileReadingProvider = {
+/** The capability the credential routes need: only a provider that injects files has any. */
+type CredentialFileProvider = {
   readFiles(id: string, paths: readonly string[]): Promise<Record<string, string>>;
+  writeFiles(id: string, files: EnvFile[]): Promise<void>;
 };
 
-export async function getFileReadingProvider(): Promise<FileReadingProvider> {
+export async function getCredentialFileProvider(): Promise<CredentialFileProvider> {
   const provider = await getProvider();
-  if (!('readFiles' in provider)) {
-    throw new Error('This deployment cannot read credentials out of an environment');
+  if (!('readFiles' in provider) || !('writeFiles' in provider)) {
+    throw new Error('This deployment cannot move credentials in and out of an environment');
   }
-  return provider as EnvironmentProvider & FileReadingProvider;
+  return provider as EnvironmentProvider & CredentialFileProvider;
+}
+
+/**
+ * Puts the session's sign-ins into an environment that is already running. Create injects
+ * them itself; this is for the sandboxes that outlived the sign-in — a resume, or a project
+ * left open while the user connects a provider.
+ */
+export async function writeSessionCredentials(id: string): Promise<void> {
+  const files = sessionFiles(await readSession());
+  if (files.length === 0) return;
+  await (await getCredentialFileProvider()).writeFiles(id, files);
 }
 
 /** How long an auth sandbox may live before the sweep treats it as abandoned. */
