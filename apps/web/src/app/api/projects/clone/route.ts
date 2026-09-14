@@ -5,9 +5,6 @@ import { cloneRepository } from '@/server/clone';
 import { ensureCloneRoot } from '@/server/folders';
 import { sourceErrorResponse } from '@/server/source-response';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const BodySchema = z.object({
   url: z.string().trim().min(1),
   parent: z.string().trim().min(1).optional(),

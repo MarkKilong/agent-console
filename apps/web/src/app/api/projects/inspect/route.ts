@@ -4,9 +4,6 @@ import { SourceError } from '@/lib/project-source';
 import { inspectFolder } from '@/server/folders';
 import { sourceErrorResponse } from '@/server/source-response';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const BodySchema = z.object({ path: z.string().trim().min(1) });
 
 export async function POST(request: Request): Promise<NextResponse> {
