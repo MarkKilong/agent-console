@@ -198,7 +198,7 @@ function BlankForm({ onBack, onDone }: { onBack(): void; onDone(): void }) {
           />
         </Field>
         <p className="text-xs text-muted-foreground">
-          Lives in a sandbox. Push to GitHub to keep it beyond a day.
+          Lives in a sandbox. Push to GitHub to keep it beyond a couple of hours.
         </p>
 
         {error ? (
