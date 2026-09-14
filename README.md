@@ -366,7 +366,7 @@ Set `NEXT_PUBLIC_ENV_PROVIDER=daytona` and the Add project dialog offers **New p
 **Git URL** instead of a folder on this machine: `POST /api/environments` takes `{repoUrl,
 branch?}` or `{name}`, and a name alone gets an empty, `git init`-ed `/workspace/repo` to start
 typing in. Each open creates a sandbox (public preview port, the runner token is the guard),
-which Daytona stops after 15 idle minutes and deletes a day later. A project remembers its
+which Daytona stops after 15 idle minutes and deletes two hours later. A project remembers its
 sandbox, so closing or switching only stops it (`POST /api/environments/:id/stop`) and reopening
 wakes it with the files intact (`POST /api/environments/:id/resume`, about two seconds); a
 stopped sandbox costs no memory quota. Once it is deleted a blank project comes back empty, so

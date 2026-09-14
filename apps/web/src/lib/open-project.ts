@@ -6,7 +6,7 @@ type Environment = { id: string; url: string; token: string; repoPath: string };
 
 const WAKING = 'Waking environment…';
 const LOST =
-  'That sandbox is gone, so this project started from an empty folder. Push to GitHub to keep work beyond a day.';
+  'That sandbox is gone, so this project started from an empty folder. Push to GitHub to keep work beyond a couple of hours.';
 
 /**
  * Makes one project the open environment: the previous one is handed back, this project's
