@@ -9,16 +9,24 @@ import { createProvider } from '../../packages/providers/src/index.js';
 
 const PREVIEW = 'https://4310-sbx.daytonaproxy.example';
 
+/** `state` is writable here: start and stop move it, as Daytona's own does. */
+type FakeSandbox = Omit<DaytonaSandbox, 'state'> & {
+  state: string;
+  calls: string[];
+  files: Map<string, string>;
+  modes: Map<string, string>;
+};
+
 /** A sandbox that records what the provider asked of it and reports itself healthy. */
 function fakeSandbox(
   id: string,
   labels: Record<string, string>,
   createdAt = new Date().toISOString(),
-): DaytonaSandbox & { calls: string[]; files: Map<string, string>; modes: Map<string, string> } {
+): FakeSandbox {
   const calls: string[] = [];
   const files = new Map<string, string>();
   const modes = new Map<string, string>();
-  return {
+  const sandbox: FakeSandbox = {
     files,
     modes,
     fs: {
@@ -45,9 +53,11 @@ function fakeSandbox(
     calls,
     start: async () => {
       calls.push('start');
+      sandbox.state = 'started';
     },
     stop: async () => {
       calls.push('stop');
+      sandbox.state = 'stopped';
     },
     delete: async () => {
       calls.push('delete');
@@ -65,8 +75,13 @@ function fakeSandbox(
       executeSessionCommand: async (session, request) => {
         calls.push(`exec ${session} ${request.command} async=${request.runAsync}`);
       },
+      executeCommand: async (command, cwd) => {
+        calls.push(`run ${command} in ${cwd}`);
+        return { exitCode: 0 };
+      },
     },
   };
+  return sandbox;
 }
 
 function fakeClient() {
@@ -133,7 +148,7 @@ describe('DaytonaProvider', () => {
     expect(sandboxes.get('sbx-1')!.calls).toEqual([
       `clone https://github.com/o/r.git ${DAYTONA_WORKSPACE} main`,
       'session runner',
-      'exec runner cd /app/packages/runner && node dist/main.js async=true',
+      'exec runner cd /app/packages/runner && IS_SANDBOX=1 node dist/main.js async=true',
     ]);
 
     await expect(provider.endpoint('sbx-1')).resolves.toEqual({
@@ -180,7 +195,7 @@ describe('DaytonaProvider', () => {
       `clone https://github.com/o/r.git ${DAYTONA_WORKSPACE}`,
       'upload /root/.claude/.credentials.json',
       'session runner',
-      'exec runner cd /app/packages/runner && node dist/main.js async=true',
+      'exec runner cd /app/packages/runner && IS_SANDBOX=1 node dist/main.js async=true',
     ]);
     expect(sandbox.modes.get('/root/.claude/.credentials.json')).toBe('600');
 
@@ -189,7 +204,22 @@ describe('DaytonaProvider', () => {
     ).resolves.toEqual({ '/root/.claude/.credentials.json': '{"token":"t"}' });
   });
 
-  it('makes an empty workspace when there is no repository, and labels it an auth sandbox', async () => {
+  it('writes files into a sandbox that is already running', async () => {
+    const { client, add } = fakeClient();
+    const provider = new DaytonaProvider({ snapshot: 'runner:1', client });
+    const sandbox = add('sbx-9', {}, 0);
+
+    await provider.writeFiles('sbx-9', [
+      { path: '/root/.codex/auth.json', content: '{"id":"new"}', mode: 0o600 },
+    ]);
+
+    expect(sandbox.files.get('/root/.codex/auth.json')).toBe('{"id":"new"}');
+    expect(sandbox.modes.get('/root/.codex/auth.json')).toBe('600');
+    // Nothing is restarted: the CLIs read their credentials again on the next turn.
+    expect(sandbox.calls).toEqual(['upload /root/.codex/auth.json']);
+  });
+
+  it('makes an empty workspace for the auth sandbox, with no repository of its own', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('{"ok":true}', { status: 200 })),
@@ -197,7 +227,7 @@ describe('DaytonaProvider', () => {
     const { client, created, sandboxes } = fakeClient();
     const provider = new DaytonaProvider({ snapshot: 'runner:1', client });
 
-    await provider.create({ env: { RUNNER_AGENT: 'fake' } });
+    await provider.create({ kind: 'auth', env: { RUNNER_AGENT: 'fake' } });
 
     const params = created[0]!;
     expect(params.labels['agent-console/kind']).toBe('auth');
@@ -209,7 +239,88 @@ describe('DaytonaProvider', () => {
       AGENT_CONSOLE_DATA_DIR: '/root/.agent-console',
       RUNNER_CWD: DAYTONA_WORKSPACE,
     });
-    expect(sandboxes.get('sbx-1')!.calls[0]).toBe(`mkdir ${DAYTONA_WORKSPACE} 755`);
+    // No `git init`: the auth sandbox never holds work worth diffing.
+    expect(sandboxes.get('sbx-1')!.calls).toEqual([
+      `mkdir ${DAYTONA_WORKSPACE} 755`,
+      'session runner',
+      'exec runner cd /app/packages/runner && IS_SANDBOX=1 node dist/main.js async=true',
+    ]);
+  });
+
+  it('git-inits the empty workspace of a project with no repository', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{"ok":true}', { status: 200 })),
+    );
+    const { client, created, sandboxes } = fakeClient();
+    const provider = new DaytonaProvider({ snapshot: 'runner:1', client });
+
+    await provider.create({ name: 'scratch' });
+
+    const params = created[0]!;
+    expect(params.labels['agent-console/name']).toBe('scratch');
+    expect(params.labels['agent-console/kind']).toBeUndefined();
+    // A project lives as long as any other, not the auth sandbox's few minutes.
+    expect(params.autoStopInterval).toBe(15);
+    expect(params.autoDeleteInterval).toBe(24 * 60);
+    expect(sandboxes.get('sbx-1')!.calls).toEqual([
+      `mkdir ${DAYTONA_WORKSPACE} 755`,
+      `run git init in ${DAYTONA_WORKSPACE}`,
+      'session runner',
+      'exec runner cd /app/packages/runner && IS_SANDBOX=1 node dist/main.js async=true',
+    ]);
+  });
+
+  it('wakes a stopped sandbox and relaunches the runner it lost with it', async () => {
+    // Down until the relaunch: the first probe is the one that decides.
+    let healthy = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        const response = new Response(healthy ? '{"ok":true}' : '', {
+          status: healthy ? 200 : 502,
+        });
+        healthy = true;
+        return response;
+      }),
+    );
+    const { client, add } = fakeClient();
+    const provider = new DaytonaProvider({ snapshot: 'runner:1', client });
+    const sandbox = add('sbx', {}, 0);
+    sandbox.state = 'stopped';
+
+    await provider.start('sbx');
+
+    expect(sandbox.calls).toEqual([
+      'start',
+      'session runner',
+      'exec runner cd /app/packages/runner && IS_SANDBOX=1 node dist/main.js async=true',
+    ]);
+  });
+
+  it('leaves a runner that is still answering alone', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{"ok":true}', { status: 200 })),
+    );
+    const { client, add } = fakeClient();
+    const provider = new DaytonaProvider({ snapshot: 'runner:1', client });
+    const sandbox = add('sbx', {}, 0);
+
+    await provider.start('sbx');
+
+    expect(sandbox.calls).toEqual([]);
+  });
+
+  it('stops a running sandbox once', async () => {
+    const { client, add } = fakeClient();
+    const provider = new DaytonaProvider({ snapshot: 'runner:1', client });
+    const sandbox = add('sbx', {}, 0);
+
+    await provider.stop('sbx');
+    await provider.stop('sbx');
+
+    expect(sandbox.calls).toEqual(['stop']);
   });
 
   it('sweeps only auth sandboxes, and only the ones past the age given', async () => {
