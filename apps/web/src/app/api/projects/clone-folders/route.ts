@@ -4,9 +4,6 @@ import { SourceError } from '@/lib/project-source';
 import { createFolder, listCloneFolders } from '@/server/folders';
 import { sourceErrorResponse } from '@/server/source-response';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const BodySchema = z.object({
   parent: z.string().trim().min(1),
   name: z.string().trim().min(1),
