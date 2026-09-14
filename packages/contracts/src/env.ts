@@ -18,6 +18,10 @@ export type EnvFile = z.infer<typeof EnvFileSchema>;
  */
 export const EnvSpecSchema = z
   .object({
+    /** `auth` is the sign-in environment: no project of its own, and it lives minutes. */
+    kind: z.literal('auth').optional(),
+    /** What to call the environment where a human sees it, e.g. a sandbox label. */
+    name: z.string().min(1).optional(),
     repoPath: z.string().min(1).optional(),
     repoUrl: z.url().optional(),
     branch: z.string().min(1).optional(),

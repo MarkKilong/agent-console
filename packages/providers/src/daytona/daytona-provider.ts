@@ -25,6 +25,7 @@ const RUNNER_PORT = 4310;
 const RUNNER_DIR = '/app/packages/runner';
 const TOKEN_LABEL = 'agent-console/token';
 const KIND_LABEL = 'agent-console/kind';
+const NAME_LABEL = 'agent-console/name';
 const CREATE_TIMEOUT_S = 180;
 const HEALTH_TIMEOUT_MS = 60_000;
 /** Idle minutes before Daytona stops the sandbox, and stopped minutes before it deletes it. */
@@ -58,6 +59,7 @@ export interface DaytonaSandbox {
       sessionId: string,
       request: { command: string; runAsync?: boolean },
     ): Promise<unknown>;
+    executeCommand(command: string, cwd?: string): Promise<{ exitCode: number; result?: string }>;
   };
 }
 
@@ -103,7 +105,8 @@ export class DaytonaProvider implements EnvironmentProvider {
         'The Daytona provider clones repoUrl; a folder on this machine cannot be reached from a sandbox',
       );
     }
-    // No repository is the auth sandbox: it only drives a sign-in, so it lives minutes.
+    // The auth sandbox only drives a sign-in, so it holds no project and lives minutes.
+    const auth = parsed.kind === 'auth';
     const repoUrl = parsed.repoUrl;
 
     const token = randomUUID();
@@ -124,11 +127,14 @@ export class DaytonaProvider implements EnvironmentProvider {
           RUNNER_PORT: String(RUNNER_PORT),
           RUNNER_CWD: DAYTONA_WORKSPACE,
         },
-        labels: repoUrl
-          ? { [TOKEN_LABEL]: token, 'agent-console/repo': repoUrl }
-          : { [TOKEN_LABEL]: token, [KIND_LABEL]: 'auth' },
-        autoStopInterval: repoUrl ? AUTO_STOP_MIN : AUTH_AUTO_STOP_MIN,
-        autoDeleteInterval: repoUrl ? AUTO_DELETE_MIN : AUTH_AUTO_DELETE_MIN,
+        labels: {
+          [TOKEN_LABEL]: token,
+          ...(auth ? { [KIND_LABEL]: 'auth' } : {}),
+          ...(repoUrl ? { 'agent-console/repo': repoUrl } : {}),
+          ...(parsed.name ? { [NAME_LABEL]: parsed.name } : {}),
+        },
+        autoStopInterval: auth ? AUTH_AUTO_STOP_MIN : AUTO_STOP_MIN,
+        autoDeleteInterval: auth ? AUTH_AUTO_DELETE_MIN : AUTO_DELETE_MIN,
       },
       { timeout: CREATE_TIMEOUT_S },
     );
@@ -136,6 +142,8 @@ export class DaytonaProvider implements EnvironmentProvider {
     try {
       if (repoUrl) await sandbox.git.clone(repoUrl, DAYTONA_WORKSPACE, parsed.branch);
       else await sandbox.fs.createFolder(DAYTONA_WORKSPACE, '755');
+      // A project with no repository is still a repository: diffs and commits need one.
+      if (!auth && !repoUrl) await gitInit(sandbox);
       // Before the runner: the CLIs read their credentials as they start.
       await writeFiles(sandbox, parsed.files);
       await launchRunner(sandbox);
@@ -145,6 +153,14 @@ export class DaytonaProvider implements EnvironmentProvider {
       throw error;
     }
     return { id: sandbox.id, kind: 'daytona', status: 'running' };
+  }
+
+  /**
+   * Writes credential files into a sandbox that already exists — a sign-in that landed after
+   * create, or a resume. The CLIs read these files per turn, so no runner restart is needed.
+   */
+  async writeFiles(id: string, files: EnvFile[]): Promise<void> {
+    await writeFiles(await this.sandbox(id), files);
   }
 
   /**
@@ -190,12 +206,14 @@ export class DaytonaProvider implements EnvironmentProvider {
   async start(id: string): Promise<void> {
     const sandbox = await this.sandbox(id);
     if (sandbox.state !== 'started') await sandbox.start();
-    // Stopping the sandbox ended the runner process with it.
-    await launchRunner(sandbox);
+    // Stopping the sandbox ended the runner with it; an idle one still has the old process.
+    const { url } = await sandbox.getPreviewLink(RUNNER_PORT);
+    if (!(await isHealthy(url))) await launchRunner(sandbox);
   }
 
   async stop(id: string): Promise<void> {
-    await (await this.sandbox(id)).stop();
+    const sandbox = await this.sandbox(id);
+    if (sandbox.state === 'started') await sandbox.stop();
   }
 
   async destroy(id: string): Promise<void> {
@@ -254,12 +272,20 @@ async function writeFiles(sandbox: DaytonaSandbox, files: EnvFile[] | undefined)
   }
 }
 
+/** Makes the empty workspace a git repository, which is what the runner diffs against. */
+async function gitInit(sandbox: DaytonaSandbox): Promise<void> {
+  const { exitCode, result } = await sandbox.process.executeCommand('git init', DAYTONA_WORKSPACE);
+  if (exitCode !== 0) throw new Error(`git init failed in the sandbox: ${result ?? exitCode}`);
+}
+
 /** Starts the runner in its own session and waits until it answers on the preview URL. */
 async function launchRunner(sandbox: DaytonaSandbox): Promise<void> {
   // A session that survived a previous launch is reused; only a missing one is created.
   await sandbox.process.createSession('runner').catch(() => {});
   await sandbox.process.executeSessionCommand('runner', {
-    command: `cd ${RUNNER_DIR} && node dist/main.js`,
+    // The sandbox runs as root, and Claude Code refuses to skip permissions as root unless
+    // told it is inside a sandbox. On the launch command so a woken sandbox gets it too.
+    command: `cd ${RUNNER_DIR} && IS_SANDBOX=1 node dist/main.js`,
     runAsync: true,
   });
   const preview = await sandbox.getPreviewLink(RUNNER_PORT);
@@ -269,15 +295,19 @@ async function launchRunner(sandbox: DaytonaSandbox): Promise<void> {
 async function waitForHealth(baseUrl: string): Promise<void> {
   const deadline = Date.now() + HEALTH_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`${baseUrl}/healthz`, { signal: AbortSignal.timeout(5_000) });
-      if (response.ok) return;
-    } catch {
-      // Runner is still booting, or the proxy has not picked the port up yet.
-    }
+    if (await isHealthy(baseUrl)) return;
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   throw new Error(`Runner at ${baseUrl} did not become healthy in ${HEALTH_TIMEOUT_MS}ms`);
+}
+
+async function isHealthy(baseUrl: string): Promise<boolean> {
+  try {
+    return (await fetch(`${baseUrl}/healthz`, { signal: AbortSignal.timeout(5_000) })).ok;
+  } catch {
+    // Runner is still booting, gone with a stop, or the proxy has not picked the port up yet.
+    return false;
+  }
 }
 
 function statusOf(state: string | undefined): EnvStatus {
