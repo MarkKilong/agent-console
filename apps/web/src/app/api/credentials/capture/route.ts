@@ -9,7 +9,7 @@ import {
   summarise,
   PROVIDER_NAMES,
 } from '@/server/credentials';
-import { getFileReadingProvider, getProvider } from '@/server/provider';
+import { getCredentialFileProvider, getProvider } from '@/server/provider';
 import { readSession, writeSession } from '@/server/session';
 
 const BodySchema = z.object({
@@ -41,7 +41,7 @@ export async function POST(request: Request): Promise<Response> {
   const { environmentId, provider, info } = parsed.data;
 
   try {
-    const reader = await getFileReadingProvider();
+    const reader = await getCredentialFileProvider();
     const found = await reader.readFiles(environmentId, bundlePaths(provider));
     const files = captureFiles(provider, found);
     if (Object.keys(files).length === 0) {

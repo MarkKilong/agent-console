@@ -35,6 +35,14 @@ export function captureCredentials(
   });
 }
 
+/**
+ * Sends the session's sign-ins to a project sandbox that is already open, which create
+ * missed. Best effort: what fails here the next resume writes anyway.
+ */
+export async function pushCredentials(environmentId: string): Promise<void> {
+  await fetch(`/api/environments/${environmentId}/credentials`, { method: 'POST' }).catch(() => {});
+}
+
 export function disconnectCredentials(provider: ProviderName): Promise<CredentialSummary> {
   return send(`/api/credentials/${provider}`, { method: 'DELETE' });
 }

@@ -29,5 +29,5 @@ export async function closeAuthEnvironment(): Promise<void> {
   useAuthStore.getState().reset();
   useCodexAuthStore.getState().stop();
   useGithubStore.getState().stop();
-  await fetch(`/api/environments/${environment.id}`, { method: 'DELETE' }).catch(() => {});
+  await fetch('/api/auth-environment', { method: 'DELETE' }).catch(() => {});
 }

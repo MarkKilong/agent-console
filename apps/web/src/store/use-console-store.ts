@@ -28,9 +28,12 @@ type ConsoleStore = {
   threadMeta: Record<string, ThreadMeta>;
   threads: Record<string, ThreadState>;
   activeThreadId: string | null;
+  /** One line for the composer about the environment itself, e.g. that it is still waking. */
+  notice: string | null;
 
   openEnvironment(environment: Omit<EnvironmentInfo, 'status'>): void;
   closeEnvironment(): void;
+  setNotice(notice: string | null): void;
   setStatus(status: ConnectionStatus): void;
   newThread(): void;
   hydrateThreads(threads: ThreadSummary[]): void;
@@ -45,18 +48,22 @@ export const useConsoleStore = create<ConsoleStore>((set) => ({
   threadMeta: {},
   threads: {},
   activeThreadId: null,
+  notice: null,
 
   openEnvironment: (environment) =>
-    set({ environment: { ...environment, status: 'idle' }, ...freshThread() }),
+    set({ environment: { ...environment, status: 'idle' }, notice: null, ...freshThread() }),
 
   closeEnvironment: () =>
     set({
       environment: null,
+      notice: null,
       threadOrder: [],
       threadMeta: {},
       threads: {},
       activeThreadId: null,
     }),
+
+  setNotice: (notice) => set({ notice }),
 
   setStatus: (status) =>
     set((state) => ({
